@@ -62,6 +62,14 @@ typedef struct {
   int height;
 } TileRegion;
 
+/* Durations overlap across ranks, so total is not transfer + computation.
+ * All fields exclude image I/O, worker shutdown, and the final timing reduction. */
+typedef struct {
+  double total;       /* Coordinator execution intervals across the pipeline. */
+  double transfer;    /* Packing, blocking MPI, and result placement on rank 0. */
+  double computation; /* Local pixel processing; take MPI_MAX at shutdown. */
+} ExecutionTiming;
+
 #define BLUR_RADIUS 4 /* 9x9 kernel */
 
 /* =========================================================================
@@ -385,8 +393,7 @@ static int receive_tile_result(int worker_rank, unsigned char *destination,
  * ========================================================================= */
 void execute_operation_coordinator(OpType op, ModeType mode, int num_procs,
                                    unsigned char **img_ptr, int *w_ptr,
-                                   int *h_ptr, double *total_time,
-                                   double *comm_time, double *comp_time) {
+                                   int *h_ptr, ExecutionTiming *timing) {
   int orig_w = *w_ptr;
   int orig_h = *h_ptr;
   ImageSize input = {orig_w, orig_h};
@@ -532,15 +539,9 @@ void execute_operation_coordinator(OpType op, ModeType mode, int num_procs,
   }
 
   double t_total = MPI_Wtime() - t_start;
-  if (mode != MODE_SEQ && num_workers >= 1) {
-    t_comp_acc = t_total - t_comm_acc;
-    if (t_comp_acc < 0.0)
-      t_comp_acc = 0.0;
-  }
-
-  *total_time += t_total;
-  *comm_time += t_comm_acc;
-  *comp_time += t_comp_acc;
+  timing->total += t_total;
+  timing->transfer += t_comm_acc;
+  timing->computation += t_comp_acc;
 
   free(src_img);
   *img_ptr = dst_img;
@@ -551,7 +552,8 @@ void execute_operation_coordinator(OpType op, ModeType mode, int num_procs,
 /* =========================================================================
  * Worker Event Loop (Ranks 1 .. N-1)
  * ========================================================================= */
-void worker_loop(void) {
+double worker_loop(void) {
+  double computation_time = 0.0;
   while (1) {
     MPI_Status status;
     TaskMeta meta;
@@ -572,7 +574,9 @@ void worker_loop(void) {
              MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
     /* Perform matrix computation */
+    double compute_start = MPI_Wtime();
     process_submatrix(&meta, in_buf, out_buf);
+    computation_time += MPI_Wtime() - compute_start;
 
     /* Send processed submatrix back to Coordinator */
     MPI_Send(&meta, sizeof(TaskMeta), MPI_BYTE, 0, TAG_RESULT_META,
@@ -583,6 +587,7 @@ void worker_loop(void) {
     free(in_buf);
     free(out_buf);
   }
+  return computation_time;
 }
 
 /* =========================================================================
@@ -618,6 +623,8 @@ ModeType parse_mode(const char *str) {
 
 int main(int argc, char *argv[]) {
   int rank, size;
+  ExecutionTiming timing = {0};
+  int init_w = 0, init_h = 0;
   MPI_Init(&argc, &argv);
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   MPI_Comm_size(MPI_COMM_WORLD, &size);
@@ -647,8 +654,8 @@ int main(int argc, char *argv[]) {
       MPI_Abort(MPI_COMM_WORLD, 1);
     }
 
-    int init_w = width, init_h = height;
-    double total_time = 0.0, comm_time = 0.0, comp_time = 0.0;
+    init_w = width;
+    init_h = height;
 
     /* Parse comma-separated pipeline of operations */
     char *pipe_copy = strdup(pipe_str);
@@ -659,7 +666,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Warning: Unknown operation '%s' skipped.\n", token);
       } else {
         execute_operation_coordinator(op, mode, size, &img, &width, &height,
-                                      &total_time, &comm_time, &comp_time);
+                                      &timing);
       }
       token = strtok(NULL, ",");
     }
@@ -678,13 +685,21 @@ int main(int argc, char *argv[]) {
       write_ppm(out_file, img, width, height);
     }
     free(img);
-
-    /* Structured CSV line for Python benchmark script */
-    printf("BENCHMARK,%s,%s,%d,%d,%d,%.6f,%.6f,%.6f\n", pipe_str, mode_str,
-           init_w, init_h, size, total_time, comm_time, comp_time);
-    fflush(stdout);
   } else {
-    worker_loop();
+    timing.computation = worker_loop();
+  }
+
+  /* Sum each rank's pixel-processing intervals across the whole pipeline,
+   * then report the largest rank total, not a sum of per-operation maxima. */
+  double max_computation_time = 0.0;
+  MPI_Reduce(&timing.computation, &max_computation_time, 1, MPI_DOUBLE, MPI_MAX,
+             0, MPI_COMM_WORLD);
+  if (rank == 0) {
+    /* Preserve the CSV field order: total, coordinator transfer, computation. */
+    printf("BENCHMARK,%s,%s,%d,%d,%d,%.6f,%.6f,%.6f\n", argv[4], argv[3],
+           init_w, init_h, size, timing.total, timing.transfer,
+           max_computation_time);
+    fflush(stdout);
   }
 
   MPI_Finalize();
