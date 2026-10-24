@@ -1,4 +1,5 @@
 #include <ctype.h>
+#include <errno.h>
 #include <limits.h>
 #include <mpi.h>
 #include <stdio.h>
@@ -18,7 +19,7 @@ typedef enum {
   OP_GRAYSCALE = 1, /* Cat 1: Color in-place */
   OP_INVERT = 2,    /* Cat 1: Color in-place */
   OP_SEPIA = 3,     /* Cat 1: Color in-place */
-  OP_BLUR = 4,      /* Cat 2: Neighborhood (9x9 Box Blur) */
+  OP_BLUR = 4,      /* Cat 2: Neighborhood (Box Blur) */
   OP_FLIP_H = 5,    /* Cat 3: Move pixels (Horizontal Flip) */
   OP_ROTATE90 = 6   /* Cat 3: Move pixels + change dimensions (90 deg CW) */
 } OpType;
@@ -34,6 +35,7 @@ typedef enum {
 /* Task descriptor sent from Coordinator (Rank 0) to Workers */
 typedef struct {
   int op;
+  int blur_radius;
   int orig_w;
   int orig_h;
   /* Output region (in destination image coordinates) this worker is responsible
@@ -70,7 +72,7 @@ typedef struct {
   double computation; /* Local pixel processing; take MPI_MAX at shutdown. */
 } ExecutionTiming;
 
-#define BLUR_RADIUS 4 /* 9x9 kernel */
+#define DEFAULT_BLUR_KERNEL_SIZE 9
 
 /* =========================================================================
  * PPM (P6) Image I/O (Direct Memory Matrix Representation)
@@ -187,18 +189,19 @@ void process_submatrix(const TaskMeta *meta, const unsigned char *in_buf,
         int center_r = glob_r - meta->in_y;
         int center_c = glob_c - meta->in_x;
 
-        int sum_r = 0, sum_g = 0, sum_b = 0, count = 0;
-        for (int dr = -BLUR_RADIUS; dr <= BLUR_RADIUS; dr++) {
-          for (int dc = -BLUR_RADIUS; dc <= BLUR_RADIUS; dc++) {
-            int nr = center_r + dr;
-            int nc = center_c + dc;
-            if (nr >= 0 && nr < in_h && nc >= 0 && nc < in_w) {
-              size_t idx = ((size_t)nr * in_w + nc) * 3;
-              sum_r += in_buf[idx];
-              sum_g += in_buf[idx + 1];
-              sum_b += in_buf[idx + 2];
-              count++;
-            }
+        int radius = meta->blur_radius;
+        int r0 = center_r > radius ? center_r - radius : 0;
+        int c0 = center_c > radius ? center_c - radius : 0;
+        int r1 = radius < in_h - 1 - center_r ? center_r + radius : in_h - 1;
+        int c1 = radius < in_w - 1 - center_c ? center_c + radius : in_w - 1;
+        unsigned long long sum_r = 0, sum_g = 0, sum_b = 0, count = 0;
+        for (int nr = r0; nr <= r1; nr++) {
+          for (int nc = c0; nc <= c1; nc++) {
+            size_t idx = ((size_t)nr * in_w + nc) * 3;
+            sum_r += in_buf[idx];
+            sum_g += in_buf[idx + 1];
+            sum_b += in_buf[idx + 2];
+            count++;
           }
         }
         out_buf[out_idx] = (unsigned char)(sum_r / count);
@@ -235,8 +238,10 @@ static ImageSize operation_output_size(OpType op, ImageSize input) {
   return input;
 }
 
-static TaskMeta make_tile_task(OpType op, ImageSize input, TileRegion output) {
+static TaskMeta make_tile_task(OpType op, int blur_radius, ImageSize input,
+                              TileRegion output) {
   TaskMeta task = {.op = op,
+                   .blur_radius = blur_radius,
                    .orig_w = input.width,
                    .orig_h = input.height,
                    .out_x = output.x,
@@ -252,18 +257,16 @@ static TaskMeta make_tile_task(OpType op, ImageSize input, TileRegion output) {
     task.in_w = task.out_w;
     task.in_h = task.out_h;
   } else if (task.op == OP_BLUR) {
-    int x0 = task.out_x - BLUR_RADIUS;
-    int y0 = task.out_y - BLUR_RADIUS;
-    int x1 = task.out_x + task.out_w + BLUR_RADIUS;
-    int y1 = task.out_y + task.out_h + BLUR_RADIUS;
+    int x0 = task.out_x - blur_radius;
+    int y0 = task.out_y - blur_radius;
+    int x1 = task.out_x + task.out_w;
+    int y1 = task.out_y + task.out_h;
+    x1 += blur_radius < task.orig_w - x1 ? blur_radius : task.orig_w - x1;
+    y1 += blur_radius < task.orig_h - y1 ? blur_radius : task.orig_h - y1;
     if (x0 < 0)
       x0 = 0;
     if (y0 < 0)
       y0 = 0;
-    if (x1 > task.orig_w)
-      x1 = task.orig_w;
-    if (y1 > task.orig_h)
-      y1 = task.orig_h;
     task.in_x = x0;
     task.in_y = y0;
     task.in_w = x1 - x0;
@@ -391,8 +394,8 @@ static int receive_tile_result(int worker_rank, unsigned char *destination,
 /* =========================================================================
  * Coordinator Execution for One Operation in the Pipeline
  * ========================================================================= */
-void execute_operation_coordinator(OpType op, ModeType mode, int num_procs,
-                                   unsigned char **img_ptr, int *w_ptr,
+void execute_operation_coordinator(OpType op, ModeType mode, int blur_radius,
+                                   int num_procs, unsigned char **img_ptr, int *w_ptr,
                                    int *h_ptr, ExecutionTiming *timing) {
   int orig_w = *w_ptr;
   int orig_h = *h_ptr;
@@ -412,7 +415,8 @@ void execute_operation_coordinator(OpType op, ModeType mode, int num_procs,
 
   /* 1. SEQUENTIAL MODE (or if launched with -np 1) */
   if (mode == MODE_SEQ || num_workers < 1) {
-    TaskMeta meta = make_tile_task(op, input, (TileRegion){0, 0, new_w, new_h});
+    TaskMeta meta = make_tile_task(op, blur_radius, input,
+                                   (TileRegion){0, 0, new_w, new_h});
     double c0 = MPI_Wtime();
     process_submatrix(&meta, src_img, dst_img);
     t_comp_acc += (MPI_Wtime() - c0);
@@ -430,8 +434,8 @@ void execute_operation_coordinator(OpType op, ModeType mode, int num_procs,
       int worker_rank = w + 1;
       int h_slice = rows_per_worker + (w < rem ? 1 : 0);
 
-      tasks[w] =
-          make_tile_task(op, input, (TileRegion){0, cur_y, new_w, h_slice});
+      tasks[w] = make_tile_task(op, blur_radius, input,
+                                (TileRegion){0, cur_y, new_w, h_slice});
       cur_y += h_slice;
 
       double cm0 = MPI_Wtime();
@@ -470,8 +474,8 @@ void execute_operation_coordinator(OpType op, ModeType mode, int num_procs,
         int x1 = ((gc + 1) * new_w) / grid_cols;
         int worker_rank = w_idx + 1;
 
-        tasks[w_idx] =
-            make_tile_task(op, input, (TileRegion){x0, y0, x1 - x0, y1 - y0});
+        tasks[w_idx] = make_tile_task(op, blur_radius, input,
+                                      (TileRegion){x0, y0, x1 - x0, y1 - y0});
 
         double cm0 = MPI_Wtime();
         send_tile_task(worker_rank, &tasks[w_idx], src_img);
@@ -503,8 +507,8 @@ void execute_operation_coordinator(OpType op, ModeType mode, int num_procs,
     for (int i = 0; i < num_chunks; i++) {
       int y0 = (i * new_h) / num_chunks;
       int y1 = ((i + 1) * new_h) / num_chunks;
-      chunks[i] =
-          make_tile_task(op, input, (TileRegion){0, y0, new_w, y1 - y0});
+      chunks[i] = make_tile_task(op, blur_radius, input,
+                                 (TileRegion){0, y0, new_w, y1 - y0});
     }
 
     int next_chunk = 0;
@@ -609,6 +613,26 @@ OpType parse_op(const char *str) {
   return OP_NONE;
 }
 
+/* A size belongs to one blur stage; plain blur always uses the default. */
+static int parse_pipeline_step(const char *token, OpType *op, int *blur_radius) {
+  *op = parse_op(token);
+  *blur_radius = DEFAULT_BLUR_KERNEL_SIZE / 2;
+  if (strncmp(token, "blur:", 5) != 0)
+    return 1;
+
+  const char *size = token + 5;
+  char *end;
+  errno = 0;
+  long parsed = strtol(size, &end, 10);
+  if (errno == ERANGE || end == size || *end != '\0' || parsed < 1 ||
+      parsed > INT_MAX || parsed % 2 == 0)
+    return 0;
+
+  *op = OP_BLUR;
+  *blur_radius = (int)parsed / 2;
+  return 1;
+}
+
 ModeType parse_mode(const char *str) {
   if (strcmp(str, "seq") == 0)
     return MODE_SEQ;
@@ -629,12 +653,13 @@ int main(int argc, char *argv[]) {
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-  if (argc < 5) {
+  if (argc != 5) {
     if (rank == 0) {
       fprintf(stderr,
               "Usage: %s <input.ppm> <output.ppm> <mode: "
               "seq|static_1d|static_2d|dynamic_1d> <pipeline: "
-              "grayscale,blur,flip,...>\n",
+              "grayscale,blur,blur:13,flip,...>\n"
+              "Blur sizes must be positive odd integers; plain blur uses 9.\n",
               argv[0]);
     }
     MPI_Finalize();
@@ -648,6 +673,26 @@ int main(int argc, char *argv[]) {
     const char *pipe_str = argv[4];
 
     ModeType mode = parse_mode(mode_str);
+    /* Validate every stage before processing or opening the output file. */
+    char *pipe_copy = strdup(pipe_str);
+    if (!pipe_copy) {
+      fprintf(stderr, "Error: Cannot allocate pipeline.\n");
+      MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+    char *token = strtok(pipe_copy, ",");
+    while (token != NULL) {
+      OpType op;
+      int blur_radius;
+      if (!parse_pipeline_step(token, &op, &blur_radius)) {
+        fprintf(stderr, "Error: Blur kernel size must be a positive odd integer "
+                        "no greater than %d, in '%s'.\n", INT_MAX, token);
+        free(pipe_copy);
+        MPI_Abort(MPI_COMM_WORLD, 1);
+      }
+      token = strtok(NULL, ",");
+    }
+    /* Restore the separators overwritten by strtok for the execution pass. */
+    strcpy(pipe_copy, pipe_str);
     int width = 0, height = 0;
     unsigned char *img = read_ppm(in_file, &width, &height);
     if (!img) {
@@ -658,15 +703,16 @@ int main(int argc, char *argv[]) {
     init_h = height;
 
     /* Parse comma-separated pipeline of operations */
-    char *pipe_copy = strdup(pipe_str);
-    char *token = strtok(pipe_copy, ",");
+    token = strtok(pipe_copy, ",");
     while (token != NULL) {
-      OpType op = parse_op(token);
+      OpType op;
+      int blur_radius;
+      parse_pipeline_step(token, &op, &blur_radius);
       if (op == OP_NONE) {
         fprintf(stderr, "Warning: Unknown operation '%s' skipped.\n", token);
       } else {
-        execute_operation_coordinator(op, mode, size, &img, &width, &height,
-                                      &timing);
+        execute_operation_coordinator(op, mode, blur_radius, size, &img, &width,
+                                      &height, &timing);
       }
       token = strtok(NULL, ",");
     }
