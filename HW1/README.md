@@ -96,3 +96,20 @@ mpirun --oversubscribe -np 4 ./mpi_image_proc test_images/sample_1.5MP.ppm NONE 
 ```bash
 mpirun --oversubscribe --host victus:4,HP-Laptop:4 ./mpi_image_proc test_images/sample_1.5MP.ppm test_images/out_grayscale_blur_flip.ppm dynamic_1d grayscale,blur:13,flip
 ```
+
+
+## 6. Raportul benchmark
+
+Rulează suita de măsurători și generează raportul:
+
+```bash
+python3 -m pip install numpy matplotlib
+python3 benchmark.py
+```
+
+Pentru cluster, folosește `python3 benchmark.py --hosts victus:4,HP-Laptop:4`.
+
+Programul necesită `mpicc` și `mpirun` și salvează rezultatele în
+`benchmark_results.csv`. Raportul [experimental_study.md](experimental_study.md)
+conține tabele și imagini PNG din `benchmark_figures/`. Include raportul și
+acest director în commit pentru ca GitHub să afișeze graficele.

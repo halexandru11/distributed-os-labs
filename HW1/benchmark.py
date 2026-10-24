@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 import os
-import io
 import sys
-import json
 import time
 import csv
-import base64
 import argparse
 import subprocess
 import numpy as np
@@ -23,7 +20,8 @@ C_SOURCE = "mpi_image_proc.c"
 BINARY   = "./mpi_image_proc"
 CSV_FILE = "benchmark_results.csv"
 IMG_DIR  = "test_images"
-NB_FILE  = "experimental_study.ipynb"
+REPORT_FILE = "experimental_study.md"
+REPORT_IMG_DIR = "benchmark_figures"
 
 class TermUI:
     CYAN   = "\033[96m"
@@ -252,26 +250,15 @@ def run_benchmark_suite(hosts=None):
     print(f"\n\n{TermUI.GREEN}✔ Finalizat în {time.time()-t0:.1f}s! Salvat -> {CSV_FILE}{TermUI.RESET}")
     return aggregated, max_label, mid_np, sample_outputs
 
-def fig_to_markdown_cell(fig, title_md=""):
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=140, bbox_inches="tight")
+def figure_to_markdown(fig, filename, alt_text):
+    os.makedirs(REPORT_IMG_DIR, exist_ok=True)
+    path = os.path.join(REPORT_IMG_DIR, filename)
+    fig.savefig(path, format="png", dpi=140, bbox_inches="tight")
     plt.close(fig)
-    buf.seek(0)
-    b64 = base64.b64encode(buf.read()).decode("ascii")
+    return f"![{alt_text}]({path})\n"
 
-    source = []
-    if title_md:
-        source.append(f"{title_md}\n\n")
-    source.append(f"![](data:image/png;base64,{b64})\n")
-
-    return {
-        "cell_type": "markdown",
-        "metadata": {},
-        "source": source
-    }
-
-def generate_detailed_notebook(results, max_res_label, mid_np, hosts, sample_outputs):
-    TermUI.banner(f"4. Generare Raport în {NB_FILE}")
+def generate_detailed_report(results, max_res_label, mid_np, hosts, sample_outputs):
+    TermUI.banner(f"4. Generare Raport în {REPORT_FILE}")
     if not HAS_MATPLOTLIB:
         print(f"{TermUI.RED}matplotlib necesar. pip install matplotlib{TermUI.RESET}")
         return
@@ -310,7 +297,7 @@ def generate_detailed_notebook(results, max_res_label, mid_np, hosts, sample_out
     ax_z.set_title("6. Zoom Detaliu (Stânga: Input | Dreapta: Blur)", fontsize=9, fontweight="bold")
     ax_z.axis("off")
     fig0.tight_layout(rect=[0, 0.03, 1, 0.94])
-    cell_fig0 = fig_to_markdown_cell(fig0)
+    figure0 = figure_to_markdown(fig0, "visual_check.png", "Verificarea vizuală a operațiilor")
 
     # Figura 1: Timp vs Procese
     fig1, axes1 = plt.subplots(2, 2, figsize=(13, 8))
@@ -330,7 +317,7 @@ def generate_detailed_notebook(results, max_res_label, mid_np, hosts, sample_out
         ax.grid(True, linestyle=":", alpha=0.6)
         ax.legend(fontsize=8)
     fig1.tight_layout(rect=[0, 0.03, 1, 0.94])
-    cell_fig1 = fig_to_markdown_cell(fig1)
+    figure1 = figure_to_markdown(fig1, "execution_time.png", "Timpul de execuție în funcție de numărul de procese")
 
     # Figura 2: Speedup
     fig2, axes2 = plt.subplots(2, 2, figsize=(13, 8))
@@ -350,7 +337,7 @@ def generate_detailed_notebook(results, max_res_label, mid_np, hosts, sample_out
         ax.grid(True, linestyle=":", alpha=0.6)
         ax.legend(fontsize=8)
     fig2.tight_layout(rect=[0, 0.03, 1, 0.94])
-    cell_fig2 = fig_to_markdown_cell(fig2)
+    figure2 = figure_to_markdown(fig2, "speedup.png", "Speedup în funcție de numărul de workeri")
 
     # Figura 3: Scalabilitate cu Rezoluția
     fig3, axes3 = plt.subplots(1, 3, figsize=(14, 4.5))
@@ -369,7 +356,7 @@ def generate_detailed_notebook(results, max_res_label, mid_np, hosts, sample_out
         ax.grid(True, linestyle=":", alpha=0.6)
         ax.legend(fontsize=8)
     fig3.tight_layout(rect=[0, 0.03, 1, 0.92])
-    cell_fig3 = fig_to_markdown_cell(fig3)
+    figure3 = figure_to_markdown(fig3, "resolution_scaling.png", "Scalabilitatea cu rezoluția imaginii")
 
     # Figura 4: Împărțire Slicing
     fig4, (ax4a, ax4b) = plt.subplots(1, 2, figsize=(13, 5))
@@ -407,7 +394,7 @@ def generate_detailed_notebook(results, max_res_label, mid_np, hosts, sample_out
     ax4b.legend(fontsize=8)
 
     fig4.tight_layout(rect=[0, 0.03, 1, 0.92])
-    cell_fig4 = fig_to_markdown_cell(fig4)
+    figure4 = figure_to_markdown(fig4, "partition_strategies.png", "Comparația strategiilor de divizare")
 
     tbl = [
         f"### Tabel Sintetic al Rezultatelor Măsurate (Rezoluție: `{max_res_label}`)\n\n",
@@ -419,89 +406,51 @@ def generate_detailed_notebook(results, max_res_label, mid_np, hosts, sample_out
             tbl.append(f"| `{r['op']}` | `{r['mode']}` | {r['np']} | {r['workers']} | **{r['avg_total_s']:.4f}s** | {r['avg_comp_s']:.4f}s | {r['avg_comm_s']:.4f}s | **{r['speedup']:.2f}x** |\n")
 
     cluster_str = f"Cluster Multi-Node (`{hosts}`)" if hosts else "Single Machine (Local Multi-Core)"
-    cells = [
-        {
-            "cell_type": "markdown",
-            "metadata": {},
-            "source": [
-                "# Studiul Experimental al Prelucrării Paralele de Imagini în MPI\n\n",
-                f"**Mediu de execuție:** {cluster_str} | **Rezoluție principală:** `{max_res_label}` (~25 MB per imagine necomprimată)\n\n",
-                "Acest studiu evaluează performanța implementării paralele bazate pe șablonul **Coordonator-Workers** în MPI pentru procesarea matricilor de pixeli RGB (format necomprimat **PPM `P6`**)."
-            ]
-        },
-        {
-            "cell_type": "markdown",
-            "metadata": {},
-            "source": [
-                "## 0. Verificarea Vizuală a Corectitudinii Operațiilor Grafice\n",
-                "Imaginea generată conține un marcaj roșu în stânga-sus, o grilă albă fină (1 px) și un cerc central galben. Aceste repere permit confirmarea corectitudinii algoritmilor de rotire, oglindire și asamblare a feliilor transmise prin MPI:"
-            ]
-        },
-        cell_fig0,
-        {
-            "cell_type": "markdown",
-            "metadata": {},
-            "source": [
-                "## 1. Variația Timpului de Execuție în Funcție de Numărul de Procese MPI (`np`)\n",
-                "**Concluzii experimentale:**\n",
-                "- **Operații cu calcul intensiv per pixel (`blur` și `pipeline`):** Timpul de execuție scade pronunțat pe măsură ce adăugăm workeri, evidențiind o scalabilitate puternică (Strong Scaling).\n",
-                "- **Operații simple (`grayscale`):** Complexitatea aritmetică redusă per pixel face ca timpul de transmitere a datelor prin memorie/rețea să limiteze câștigul paralel.\n",
-                "- **Saturația Hardware (Oversubscription):** Peste numărul de nuclee fizice/logice ale mașinii, panta se aplatizează sau începe să urce ușor din cauza context-switching-ului la nivel de OS."
-            ]
-        },
-        cell_fig1,
-        {
-            "cell_type": "markdown",
-            "metadata": {},
-            "source": [
-                "## 2. Analiza Speedup-ului Paralel ($S_p = \\frac{T_{seq}}{T_{par}}$)\n",
-                "Speedup-ul măsoară accelerarea obținută comparativ cu execuția secvențială:\n",
-                "- Pentru filtrul **Box Blur**, volumul mare de operații aritmetice pe vecinătăți oferă un speedup solid pe arhitecturi multi-core.\n",
-                "- Pentru filtrul **Grayscale**, speedup-ul rămâne aproape de 1.0x-1.1x din cauza raportului mic între calcul și comunicație."
-            ]
-        },
-        cell_fig2,
-        {
-            "cell_type": "markdown",
-            "metadata": {},
-            "source": [
-                "## 3. Scalabilitatea cu Rezoluția Imaginii ($N \\times M$ Megapixeli)\n",
-                "Timpul de execuție crește liniar cu numărul de pixeli, conform complexității $O(N \\cdot M)$. Pe imagini mari (8MP), panta execuției paralele este semnificativ mai mică decât cea secvențială, confirmând eficiența algoritmului paralel pe volume mari de date."
-            ]
-        },
-        cell_fig3,
-        {
-            "cell_type": "markdown",
-            "metadata": {},
-            "source": [
-                "## 4. Comparația Strategiilor de Divizare (1D vs. 2D) și Load-Balancing (Static vs. Dinamic)\n",
-                "- **Divizare 1D vs. 2D:** Divizarea 1D orizontală este structural superioară divizării 2D în dale, deoarece ordinea *row-major* din C permite citirea directă a memoriei fără overhead-ul de împachetare (`pack_submatrix`) vizibil în bara portocalie a modului `static_2d`.\n",
-                "- **Static vs. Dinamic:** Deși `static_1d` transmite mai puține mesaje, **`dynamic_1d` obține cel mai bun timp de execuție**. Împărțirea în *chunk*-uri mai mici aduce două avantaje majore: o localitate a memoriei cache (L2/L3) superioară și eliminarea timpilor morți cauzați de fluctuațiile de frecvență ale nucleelor CPU (straggler effect).\n",
-                "- **Comportament pe cluster:** Avantajul modului dinamic va fi și mai pronunțat la conectarea a două laptopuri cu procesoare diferite."
-            ]
-        },
-        cell_fig4,
-        {
-            "cell_type": "markdown",
-            "metadata": {},
-            "source": tbl
-        }
+    sections = [
+        (
+            "# Studiul Experimental al Prelucrării Paralele de Imagini în MPI\n\n"
+            f"**Mediu de execuție:** {cluster_str} | **Rezoluție principală:** `{max_res_label}` (~25 MB per imagine necomprimată)\n\n"
+            "Acest studiu evaluează performanța implementării paralele bazate pe șablonul **Coordonator-Workers** în MPI pentru procesarea matricilor de pixeli RGB (format necomprimat **PPM `P6`**)."
+        ),
+        (
+            "## 0. Verificarea Vizuală a Corectitudinii Operațiilor Grafice\n"
+            "Imaginea generată conține un marcaj roșu în stânga-sus, o grilă albă fină (1 px) și un cerc central galben. Aceste repere permit confirmarea corectitudinii algoritmilor de rotire, oglindire și asamblare a feliilor transmise prin MPI:"
+        ),
+        figure0,
+        (
+            "## 1. Variația Timpului de Execuție în Funcție de Numărul de Procese MPI (`np`)\n"
+            "**Concluzii experimentale:**\n"
+            "- **Operații cu calcul intensiv per pixel (`blur` și `pipeline`):** Timpul de execuție scade pronunțat pe măsură ce adăugăm workeri, evidențiind o scalabilitate puternică (Strong Scaling).\n"
+            "- **Operații simple (`grayscale`):** Complexitatea aritmetică redusă per pixel face ca timpul de transmitere a datelor prin memorie/rețea să limiteze câștigul paralel.\n"
+            "- **Saturația Hardware (Oversubscription):** Peste numărul de nuclee fizice/logice ale mașinii, panta se aplatizează sau începe să urce ușor din cauza context-switching-ului la nivel de OS."
+        ),
+        figure1,
+        (
+            "## 2. Analiza Speedup-ului Paralel ($S_p = \\frac{T_{seq}}{T_{par}}$)\n"
+            "Speedup-ul măsoară accelerarea obținută comparativ cu execuția secvențială:\n"
+            "- Pentru filtrul **Box Blur**, volumul mare de operații aritmetice pe vecinătăți oferă un speedup solid pe arhitecturi multi-core.\n"
+            "- Pentru filtrul **Grayscale**, speedup-ul rămâne aproape de 1.0x-1.1x din cauza raportului mic între calcul și comunicație."
+        ),
+        figure2,
+        (
+            "## 3. Scalabilitatea cu Rezoluția Imaginii ($N \\times M$ Megapixeli)\n"
+            "Timpul de execuție crește liniar cu numărul de pixeli, conform complexității $O(N \\cdot M)$. Pe imagini mari (8MP), panta execuției paralele este semnificativ mai mică decât cea secvențială, confirmând eficiența algoritmului paralel pe volume mari de date."
+        ),
+        figure3,
+        (
+            "## 4. Comparația Strategiilor de Divizare (1D vs. 2D) și Load-Balancing (Static vs. Dinamic)\n"
+            "- **Divizare 1D vs. 2D:** Divizarea 1D orizontală este structural superioară divizării 2D în dale, deoarece ordinea *row-major* din C permite citirea directă a memoriei fără overhead-ul de împachetare (`pack_submatrix`) vizibil în bara portocalie a modului `static_2d`.\n"
+            "- **Static vs. Dinamic:** Deși `static_1d` transmite mai puține mesaje, **`dynamic_1d` obține cel mai bun timp de execuție**. Împărțirea în *chunk*-uri mai mici aduce două avantaje majore: o localitate a memoriei cache (L2/L3) superioară și eliminarea timpilor morți cauzați de fluctuațiile de frecvență ale nucleelor CPU (straggler effect).\n"
+            "- **Comportament pe cluster:** Avantajul modului dinamic va fi și mai pronunțat la conectarea a două laptopuri cu procesoare diferite."
+        ),
+        figure4,
+        "".join(tbl)
     ]
 
-    nb_json = {
-        "cells": cells,
-        "metadata": {
-            "kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
-            "language_info": {"name": "python", "version": "3.x"}
-        },
-        "nbformat": 4,
-        "nbformat_minor": 5
-    }
+    with open(REPORT_FILE, "w", encoding="utf-8") as f:
+        f.write("\n\n".join(section.rstrip() for section in sections) + "\n")
 
-    with open(NB_FILE, "w", encoding="utf-8") as f:
-        json.dump(nb_json, f, indent=2, ensure_ascii=False)
-
-    print(f"{TermUI.GREEN}✔ Raport final regenerat cu succes -> {NB_FILE}{TermUI.RESET}")
+    print(f"{TermUI.GREEN}✔ Raport final regenerat cu succes -> {REPORT_FILE}{TermUI.RESET}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -510,4 +459,4 @@ if __name__ == "__main__":
 
     compile_mpi_code()
     results, max_res, mid_np, sample_outs = run_benchmark_suite(hosts=args.hosts)
-    generate_detailed_notebook(results, max_res, mid_np, args.hosts, sample_outs)
+    generate_detailed_report(results, max_res, mid_np, args.hosts, sample_outs)
