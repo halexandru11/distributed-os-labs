@@ -100,14 +100,19 @@ mpirun --oversubscribe --host victus:4,HP-Laptop:4 ./mpi_image_proc test_images/
 
 ## 6. Raportul benchmark
 
-Rulează suita de măsurători și generează raportul:
+Cu `uv` instalat, rulează suita de măsurători și generează raportul:
 
 ```bash
-python3 -m pip install numpy matplotlib
-python3 benchmark.py
+uv run --with numpy --with matplotlib benchmark.py
 ```
 
-Pentru cluster, folosește `python3 benchmark.py --hosts victus:4,HP-Laptop:4`.
+`uv` instalează automat dependențele Python într-un mediu izolat.
+
+Pentru cluster:
+
+```bash
+uv run --with numpy --with matplotlib benchmark.py --hosts victus:4,HP-Laptop:4
+```
 
 Programul necesită `mpicc` și `mpirun` și salvează rezultatele în
 `benchmark_results.csv`. Raportul [experimental_study.md](experimental_study.md)
