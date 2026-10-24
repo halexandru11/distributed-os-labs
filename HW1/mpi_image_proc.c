@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <limits.h>
 
 /* MPI Message Tags */
 #define TAG_TASK_META 10
@@ -277,6 +278,78 @@ void unpack_submatrix(const unsigned char *packed_buf,
 }
 
 /* =========================================================================
+ * Tile Transfer: blocking metadata and pixel messages, with owned scratch buffers
+ * ========================================================================= */
+static int tile_byte_count(int width, int height) {
+    if (width < 0 || height < 0 ||
+        (height != 0 && (size_t)width > (size_t)INT_MAX / 3 / (size_t)height)) {
+        fprintf(stderr, "Error: Tile exceeds the MPI message count limit.\n");
+        MPI_Abort(MPI_COMM_WORLD, 1);
+        exit(EXIT_FAILURE);
+    }
+    return (int)((size_t)width * (size_t)height * 3);
+}
+
+static unsigned char *allocate_tile(int bytes) {
+    /* Empty tiles still need a valid buffer for zero-count MPI messages. */
+    unsigned char *buffer = malloc(bytes > 0 ? (size_t)bytes : 1);
+    if (!buffer) {
+        fprintf(stderr, "Error: Cannot allocate tile buffer.\n");
+        MPI_Abort(MPI_COMM_WORLD, 1);
+        exit(EXIT_FAILURE);
+    }
+    return buffer;
+}
+
+/* The source remains caller-owned. Scratch storage lives until MPI_Send returns. */
+static void send_tile_task(int worker_rank, const TaskMeta *task,
+                          const unsigned char *source) {
+    int bytes = tile_byte_count(task->in_w, task->in_h);
+    unsigned char *packed = NULL;
+    const unsigned char *pixels = source;
+    if (bytes > 0) {
+        if (task->in_x == 0 && task->in_w == task->orig_w) {
+            pixels = source + (size_t)task->in_y * task->orig_w * 3;
+        } else {
+            packed = allocate_tile(bytes);
+            pack_submatrix(source, task->orig_w, task->in_x, task->in_y,
+                           task->in_w, task->in_h, packed);
+            pixels = packed;
+        }
+    }
+    MPI_Send(task, sizeof(*task), MPI_BYTE, worker_rank, TAG_TASK_META, MPI_COMM_WORLD);
+    MPI_Send(pixels, bytes, MPI_UNSIGNED_CHAR, worker_rank, TAG_TASK_DATA, MPI_COMM_WORLD);
+    free(packed);
+}
+
+/* Accept a fixed worker or MPI_ANY_SOURCE; return the worker whose result was placed. */
+static int receive_tile_result(int worker_rank, unsigned char *destination, int width) {
+    TaskMeta task;
+    MPI_Status status;
+    MPI_Recv(&task, sizeof(task), MPI_BYTE, worker_rank, TAG_RESULT_META,
+             MPI_COMM_WORLD, &status);
+    int bytes = tile_byte_count(task.out_w, task.out_h);
+    unsigned char *packed = NULL;
+    unsigned char *pixels = destination;
+    if (bytes > 0) {
+        if (task.out_x == 0 && task.out_w == width) {
+            pixels = destination + (size_t)task.out_y * width * 3;
+        } else {
+            packed = allocate_tile(bytes);
+            pixels = packed;
+        }
+    }
+    MPI_Recv(pixels, bytes, MPI_UNSIGNED_CHAR, status.MPI_SOURCE, TAG_RESULT_DATA,
+             MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    if (packed) {
+        unpack_submatrix(packed, destination, width, task.out_x, task.out_y,
+                         task.out_w, task.out_h);
+        free(packed);
+    }
+    return status.MPI_SOURCE;
+}
+
+/* =========================================================================
  * Coordinator Execution for One Operation in the Pipeline
  * ========================================================================= */
 void execute_operation_coordinator(OpType op, ModeType mode, int num_procs,
@@ -327,33 +400,15 @@ void execute_operation_coordinator(OpType op, ModeType mode, int num_procs,
             cur_y += h_slice;
 
             double cm0 = MPI_Wtime();
-            MPI_Send(&tasks[w], sizeof(TaskMeta), MPI_BYTE, worker_rank, TAG_TASK_META, MPI_COMM_WORLD);
-
-            if (tasks[w].in_w == orig_w && tasks[w].in_x == 0) {
-                /* Contiguous 1D horizontal slice: zero-copy MPI_Send directly from src_img! */
-                const unsigned char *slice_ptr = src_img + ((size_t)tasks[w].in_y * orig_w) * 3;
-                MPI_Send(slice_ptr, tasks[w].in_w * tasks[w].in_h * 3, MPI_UNSIGNED_CHAR,
-                         worker_rank, TAG_TASK_DATA, MPI_COMM_WORLD);
-            } else {
-                /* Non-contiguous input (e.g., Rotate90): pack into temporary buffer */
-                size_t in_bytes = (size_t)tasks[w].in_w * tasks[w].in_h * 3;
-                unsigned char *tmp = (unsigned char*)malloc(in_bytes);
-                pack_submatrix(src_img, orig_w, tasks[w].in_x, tasks[w].in_y, tasks[w].in_w, tasks[w].in_h, tmp);
-                MPI_Send(tmp, in_bytes, MPI_UNSIGNED_CHAR, worker_rank, TAG_TASK_DATA, MPI_COMM_WORLD);
-                free(tmp);
-            }
+            send_tile_task(worker_rank, &tasks[w], src_img);
             t_comm_acc += (MPI_Wtime() - cm0);
         }
 
         /* Receive results from all workers */
         for (int w = 0; w < num_workers; w++) {
             int worker_rank = w + 1;
-            TaskMeta res_meta;
             double cm0 = MPI_Wtime();
-            MPI_Recv(&res_meta, sizeof(TaskMeta), MPI_BYTE, worker_rank, TAG_RESULT_META, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            unsigned char *dst_slice = dst_img + ((size_t)res_meta.out_y * new_w) * 3;
-            MPI_Recv(dst_slice, res_meta.out_w * res_meta.out_h * 3, MPI_UNSIGNED_CHAR,
-                     worker_rank, TAG_RESULT_DATA, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            receive_tile_result(worker_rank, dst_img, new_w);
             t_comm_acc += (MPI_Wtime() - cm0);
         }
         free(tasks);
@@ -390,14 +445,7 @@ void execute_operation_coordinator(OpType op, ModeType mode, int num_procs,
                 compute_input_region(&tasks[w_idx]);
 
                 double cm0 = MPI_Wtime();
-                MPI_Send(&tasks[w_idx], sizeof(TaskMeta), MPI_BYTE, worker_rank, TAG_TASK_META, MPI_COMM_WORLD);
-
-                size_t in_bytes = (size_t)tasks[w_idx].in_w * tasks[w_idx].in_h * 3;
-                unsigned char *tmp = (unsigned char*)malloc(in_bytes);
-                pack_submatrix(src_img, orig_w, tasks[w_idx].in_x, tasks[w_idx].in_y,
-                               tasks[w_idx].in_w, tasks[w_idx].in_h, tmp);
-                MPI_Send(tmp, in_bytes, MPI_UNSIGNED_CHAR, worker_rank, TAG_TASK_DATA, MPI_COMM_WORLD);
-                free(tmp);
+                send_tile_task(worker_rank, &tasks[w_idx], src_img);
                 t_comm_acc += (MPI_Wtime() - cm0);
 
                 w_idx++;
@@ -407,15 +455,8 @@ void execute_operation_coordinator(OpType op, ModeType mode, int num_procs,
         /* Collect 2D tiles */
         for (int w = 0; w < num_workers; w++) {
             int worker_rank = w + 1;
-            TaskMeta res_meta;
             double cm0 = MPI_Wtime();
-            MPI_Recv(&res_meta, sizeof(TaskMeta), MPI_BYTE, worker_rank, TAG_RESULT_META, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-            size_t out_bytes = (size_t)res_meta.out_w * res_meta.out_h * 3;
-            unsigned char *tmp = (unsigned char*)malloc(out_bytes);
-            MPI_Recv(tmp, out_bytes, MPI_UNSIGNED_CHAR, worker_rank, TAG_RESULT_DATA, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            unpack_submatrix(tmp, dst_img, new_w, res_meta.out_x, res_meta.out_y, res_meta.out_w, res_meta.out_h);
-            free(tmp);
+            receive_tile_result(worker_rank, dst_img, new_w);
             t_comm_acc += (MPI_Wtime() - cm0);
         }
         free(tasks);
@@ -447,48 +488,21 @@ void execute_operation_coordinator(OpType op, ModeType mode, int num_procs,
         for (int w = 1; w <= num_workers && next_chunk < num_chunks; w++) {
             TaskMeta *t = &chunks[next_chunk++];
             double cm0 = MPI_Wtime();
-            MPI_Send(t, sizeof(TaskMeta), MPI_BYTE, w, TAG_TASK_META, MPI_COMM_WORLD);
-            if (t->in_w == orig_w && t->in_x == 0) {
-                const unsigned char *slice_ptr = src_img + ((size_t)t->in_y * orig_w) * 3;
-                MPI_Send(slice_ptr, t->in_w * t->in_h * 3, MPI_UNSIGNED_CHAR, w, TAG_TASK_DATA, MPI_COMM_WORLD);
-            } else {
-                size_t in_bytes = (size_t)t->in_w * t->in_h * 3;
-                unsigned char *tmp = (unsigned char*)malloc(in_bytes);
-                pack_submatrix(src_img, orig_w, t->in_x, t->in_y, t->in_w, t->in_h, tmp);
-                MPI_Send(tmp, in_bytes, MPI_UNSIGNED_CHAR, w, TAG_TASK_DATA, MPI_COMM_WORLD);
-                free(tmp);
-            }
+            send_tile_task(w, t, src_img);
             t_comm_acc += (MPI_Wtime() - cm0);
             active_workers++;
         }
 
         /* Dynamic dispatch loop: receive finished chunk -> immediately send next chunk */
         while (active_workers > 0) {
-            MPI_Status status;
-            TaskMeta res_meta;
             double cm0 = MPI_Wtime();
-            MPI_Recv(&res_meta, sizeof(TaskMeta), MPI_BYTE, MPI_ANY_SOURCE, TAG_RESULT_META, MPI_COMM_WORLD, &status);
-            int worker_rank = status.MPI_SOURCE;
-
-            unsigned char *dst_slice = dst_img + ((size_t)res_meta.out_y * new_w) * 3;
-            MPI_Recv(dst_slice, res_meta.out_w * res_meta.out_h * 3, MPI_UNSIGNED_CHAR,
-                     worker_rank, TAG_RESULT_DATA, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            int worker_rank = receive_tile_result(MPI_ANY_SOURCE, dst_img, new_w);
             t_comm_acc += (MPI_Wtime() - cm0);
 
             if (next_chunk < num_chunks) {
                 TaskMeta *t = &chunks[next_chunk++];
                 double cm1 = MPI_Wtime();
-                MPI_Send(t, sizeof(TaskMeta), MPI_BYTE, worker_rank, TAG_TASK_META, MPI_COMM_WORLD);
-                if (t->in_w == orig_w && t->in_x == 0) {
-                    const unsigned char *slice_ptr = src_img + ((size_t)t->in_y * orig_w) * 3;
-                    MPI_Send(slice_ptr, t->in_w * t->in_h * 3, MPI_UNSIGNED_CHAR, worker_rank, TAG_TASK_DATA, MPI_COMM_WORLD);
-                } else {
-                    size_t in_bytes = (size_t)t->in_w * t->in_h * 3;
-                    unsigned char *tmp = (unsigned char*)malloc(in_bytes);
-                    pack_submatrix(src_img, orig_w, t->in_x, t->in_y, t->in_w, t->in_h, tmp);
-                    MPI_Send(tmp, in_bytes, MPI_UNSIGNED_CHAR, worker_rank, TAG_TASK_DATA, MPI_COMM_WORLD);
-                    free(tmp);
-                }
+                send_tile_task(worker_rank, t, src_img);
                 t_comm_acc += (MPI_Wtime() - cm1);
             } else {
                 active_workers--;
@@ -526,11 +540,11 @@ void worker_loop(void) {
             break;
         }
 
-        size_t in_bytes  = (size_t)meta.in_w * meta.in_h * 3;
-        size_t out_bytes = (size_t)meta.out_w * meta.out_h * 3;
+        int in_bytes = tile_byte_count(meta.in_w, meta.in_h);
+        int out_bytes = tile_byte_count(meta.out_w, meta.out_h);
 
-        unsigned char *in_buf  = (unsigned char*)malloc(in_bytes);
-        unsigned char *out_buf = (unsigned char*)malloc(out_bytes);
+        unsigned char *in_buf = allocate_tile(in_bytes);
+        unsigned char *out_buf = allocate_tile(out_bytes);
 
         MPI_Recv(in_buf, in_bytes, MPI_UNSIGNED_CHAR, 0, TAG_TASK_DATA, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
