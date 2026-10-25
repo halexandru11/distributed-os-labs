@@ -68,7 +68,8 @@ typedef struct {
  * All fields exclude image I/O, worker shutdown, and the final timing reduction. */
 typedef struct {
   double total;       /* Coordinator execution intervals across the pipeline. */
-  double transfer;    /* Packing, blocking MPI, and result placement on rank 0. */
+  double transfer;    /* Pure blocking MPI_Send / MPI_Recv time on rank 0. */
+  double pack_unpack; /* Exact time spent in pack_submatrix & unpack_submatrix. */
   double computation; /* Local pixel processing; take MPI_MAX at shutdown. */
 } ExecutionTiming;
 
@@ -182,10 +183,8 @@ void process_submatrix(const TaskMeta *meta, const unsigned char *in_buf,
         out_buf[out_idx + 1] = (tg > 255) ? 255 : tg;
         out_buf[out_idx + 2] = (tb > 255) ? 255 : tb;
       } else if (meta->op == OP_BLUR) {
-        /* Global coordinates of this output pixel */
         int glob_r = meta->out_y + r;
         int glob_c = meta->out_x + c;
-        /* Local coordinates inside in_buf (accounting for halo offset) */
         int center_r = glob_r - meta->in_y;
         int center_c = glob_c - meta->in_x;
 
@@ -208,16 +207,12 @@ void process_submatrix(const TaskMeta *meta, const unsigned char *in_buf,
         out_buf[out_idx + 1] = (unsigned char)(sum_g / count);
         out_buf[out_idx + 2] = (unsigned char)(sum_b / count);
       } else if (meta->op == OP_FLIP_H) {
-        /* In horizontal flip, output pixel (r, c) in submatrix comes from (r,
-         * in_w - 1 - c) */
         int src_c = in_w - 1 - c;
         size_t in_idx = ((size_t)r * in_w + src_c) * 3;
         out_buf[out_idx] = in_buf[in_idx];
         out_buf[out_idx + 1] = in_buf[in_idx + 1];
         out_buf[out_idx + 2] = in_buf[in_idx + 2];
       } else if (meta->op == OP_ROTATE90) {
-        /* The input crop rotates into this output tile independently
-         * of its position in the full image. */
         int local_r = in_h - 1 - c;
         int local_c = r;
         size_t in_idx = ((size_t)local_r * in_w + local_c) * 3;
@@ -229,8 +224,6 @@ void process_submatrix(const TaskMeta *meta, const unsigned char *in_buf,
   }
 }
 
-/* The tile execution module owns dimensions and source-region derivation.
- * Schedulers choose output rectangles; they never construct input geometry. */
 static ImageSize operation_output_size(OpType op, ImageSize input) {
   if (op == OP_ROTATE90) {
     return (ImageSize){input.height, input.width};
@@ -248,7 +241,6 @@ static TaskMeta make_tile_task(OpType op, int blur_radius, ImageSize input,
                    .out_y = output.y,
                    .out_w = output.width,
                    .out_h = output.height};
-  /* Empty output rectangles have no source pixels, including for blur. */
   if (output.width == 0 || output.height == 0)
     return task;
   if (task.op == OP_GRAYSCALE || task.op == OP_INVERT || task.op == OP_SEPIA) {
@@ -277,10 +269,6 @@ static TaskMeta make_tile_task(OpType op, int blur_radius, ImageSize input,
     task.in_w = task.out_w;
     task.in_h = task.out_h;
   } else if (task.op == OP_ROTATE90) {
-    /* Output region [out_y .. out_y+out_h-1] x [out_x .. out_x+out_w-1]
-     * maps from source rows [orig_h - (out_x + out_w) .. orig_h - 1 - out_x]
-     * and source cols [out_y .. out_y + out_h - 1]
-     */
     task.in_x = task.out_y;
     task.in_y = task.orig_h - (task.out_x + task.out_w);
     task.in_w = task.out_h;
@@ -301,8 +289,7 @@ void pack_submatrix(const unsigned char *full_img, int full_w, int sub_x,
   }
 }
 
-/* Unpack a contiguous buffer back into a 2D submatrix of the full output image
- */
+/* Unpack a contiguous buffer back into a 2D submatrix of the full output image */
 void unpack_submatrix(const unsigned char *packed_buf, unsigned char *full_img,
                       int full_w, int sub_x, int sub_y, int sub_w, int sub_h) {
   for (int r = 0; r < sub_h; r++) {
@@ -315,7 +302,7 @@ void unpack_submatrix(const unsigned char *packed_buf, unsigned char *full_img,
 
 /* =========================================================================
  * Tile Transfer: blocking metadata and pixel messages, with owned scratch
- * buffers
+ * buffers and separate timing for pack/unpack vs MPI communication
  * ========================================================================= */
 static int tile_byte_count(int width, int height) {
   if (width < 0 || height < 0 ||
@@ -328,7 +315,6 @@ static int tile_byte_count(int width, int height) {
 }
 
 static unsigned char *allocate_tile(int bytes) {
-  /* Empty tiles still need a valid buffer for zero-count MPI messages. */
   unsigned char *buffer = malloc(bytes > 0 ? (size_t)bytes : 1);
   if (!buffer) {
     fprintf(stderr, "Error: Cannot allocate tile buffer.\n");
@@ -338,10 +324,9 @@ static unsigned char *allocate_tile(int bytes) {
   return buffer;
 }
 
-/* The source remains caller-owned. Scratch storage lives until MPI_Send
- * returns. */
 static void send_tile_task(int worker_rank, const TaskMeta *task,
-                           const unsigned char *source) {
+                           const unsigned char *source, double *t_comm,
+                           double *t_pack) {
   int bytes = tile_byte_count(task->in_w, task->in_h);
   unsigned char *packed = NULL;
   const unsigned char *pixels = source;
@@ -349,27 +334,32 @@ static void send_tile_task(int worker_rank, const TaskMeta *task,
     if (task->in_x == 0 && task->in_w == task->orig_w) {
       pixels = source + (size_t)task->in_y * task->orig_w * 3;
     } else {
+      double p0 = MPI_Wtime();
       packed = allocate_tile(bytes);
       pack_submatrix(source, task->orig_w, task->in_x, task->in_y, task->in_w,
                      task->in_h, packed);
+      *t_pack += (MPI_Wtime() - p0);
       pixels = packed;
     }
   }
+  double c0 = MPI_Wtime();
   MPI_Send(task, sizeof(*task), MPI_BYTE, worker_rank, TAG_TASK_META,
            MPI_COMM_WORLD);
   MPI_Send(pixels, bytes, MPI_UNSIGNED_CHAR, worker_rank, TAG_TASK_DATA,
            MPI_COMM_WORLD);
+  *t_comm += (MPI_Wtime() - c0);
   free(packed);
 }
 
-/* Accept a fixed worker or MPI_ANY_SOURCE; return the worker whose result was
- * placed. */
 static int receive_tile_result(int worker_rank, unsigned char *destination,
-                               int width) {
+                               int width, double *t_comm, double *t_unpack) {
   TaskMeta task;
   MPI_Status status;
+  double c0 = MPI_Wtime();
   MPI_Recv(&task, sizeof(task), MPI_BYTE, worker_rank, TAG_RESULT_META,
            MPI_COMM_WORLD, &status);
+  *t_comm += (MPI_Wtime() - c0);
+
   int bytes = tile_byte_count(task.out_w, task.out_h);
   unsigned char *packed = NULL;
   unsigned char *pixels = destination;
@@ -377,16 +367,24 @@ static int receive_tile_result(int worker_rank, unsigned char *destination,
     if (task.out_x == 0 && task.out_w == width) {
       pixels = destination + (size_t)task.out_y * width * 3;
     } else {
+      double p0 = MPI_Wtime();
       packed = allocate_tile(bytes);
+      *t_unpack += (MPI_Wtime() - p0);
       pixels = packed;
     }
   }
+
+  double c1 = MPI_Wtime();
   MPI_Recv(pixels, bytes, MPI_UNSIGNED_CHAR, status.MPI_SOURCE, TAG_RESULT_DATA,
            MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+  *t_comm += (MPI_Wtime() - c1);
+
   if (packed) {
+    double p1 = MPI_Wtime();
     unpack_submatrix(packed, destination, width, task.out_x, task.out_y,
                      task.out_w, task.out_h);
     free(packed);
+    *t_unpack += (MPI_Wtime() - p1);
   }
   return status.MPI_SOURCE;
 }
@@ -409,6 +407,7 @@ void execute_operation_coordinator(OpType op, ModeType mode, int blur_radius,
 
   double t_start = MPI_Wtime();
   double t_comm_acc = 0.0;
+  double t_pack_acc = 0.0;
   double t_comp_acc = 0.0;
 
   int num_workers = num_procs - 1;
@@ -429,7 +428,6 @@ void execute_operation_coordinator(OpType op, ModeType mode, int blur_radius,
 
     TaskMeta *tasks = (TaskMeta *)malloc(sizeof(TaskMeta) * num_workers);
 
-    /* Send tasks to all workers */
     for (int w = 0; w < num_workers; w++) {
       int worker_rank = w + 1;
       int h_slice = rows_per_worker + (w < rem ? 1 : 0);
@@ -438,23 +436,17 @@ void execute_operation_coordinator(OpType op, ModeType mode, int blur_radius,
                                 (TileRegion){0, cur_y, new_w, h_slice});
       cur_y += h_slice;
 
-      double cm0 = MPI_Wtime();
-      send_tile_task(worker_rank, &tasks[w], src_img);
-      t_comm_acc += (MPI_Wtime() - cm0);
+      send_tile_task(worker_rank, &tasks[w], src_img, &t_comm_acc, &t_pack_acc);
     }
 
-    /* Receive results from all workers */
     for (int w = 0; w < num_workers; w++) {
       int worker_rank = w + 1;
-      double cm0 = MPI_Wtime();
-      receive_tile_result(worker_rank, dst_img, new_w);
-      t_comm_acc += (MPI_Wtime() - cm0);
+      receive_tile_result(worker_rank, dst_img, new_w, &t_comm_acc, &t_pack_acc);
     }
     free(tasks);
   }
   /* 3. STATIC 2D (Grid Tiles) */
   else if (mode == MODE_STATIC_2D) {
-    /* Factor num_workers into grid_rows x grid_cols */
     int grid_cols = 1, grid_rows = num_workers;
     for (int i = 1; i * i <= num_workers; i++) {
       if (num_workers % i == 0) {
@@ -477,27 +469,21 @@ void execute_operation_coordinator(OpType op, ModeType mode, int blur_radius,
         tasks[w_idx] = make_tile_task(op, blur_radius, input,
                                       (TileRegion){x0, y0, x1 - x0, y1 - y0});
 
-        double cm0 = MPI_Wtime();
-        send_tile_task(worker_rank, &tasks[w_idx], src_img);
-        t_comm_acc += (MPI_Wtime() - cm0);
-
+        send_tile_task(worker_rank, &tasks[w_idx], src_img, &t_comm_acc,
+                       &t_pack_acc);
         w_idx++;
       }
     }
 
-    /* Collect 2D tiles */
     for (int w = 0; w < num_workers; w++) {
       int worker_rank = w + 1;
-      double cm0 = MPI_Wtime();
-      receive_tile_result(worker_rank, dst_img, new_w);
-      t_comm_acc += (MPI_Wtime() - cm0);
+      receive_tile_result(worker_rank, dst_img, new_w, &t_comm_acc, &t_pack_acc);
     }
     free(tasks);
   }
   /* 4. DYNAMIC 1D (Master-Worker Pool with Fine-Grained Chunks) */
   else if (mode == MODE_DYNAMIC_1D) {
-    int num_chunks =
-        num_workers * 6; /* 6 chunks per worker for smooth load balancing */
+    int num_chunks = num_workers * 6;
     if (num_chunks > new_h)
       num_chunks = new_h;
     if (num_chunks < num_workers)
@@ -514,27 +500,19 @@ void execute_operation_coordinator(OpType op, ModeType mode, int blur_radius,
     int next_chunk = 0;
     int active_workers = 0;
 
-    /* Seed initial tasks to workers */
     for (int w = 1; w <= num_workers && next_chunk < num_chunks; w++) {
       TaskMeta *t = &chunks[next_chunk++];
-      double cm0 = MPI_Wtime();
-      send_tile_task(w, t, src_img);
-      t_comm_acc += (MPI_Wtime() - cm0);
+      send_tile_task(w, t, src_img, &t_comm_acc, &t_pack_acc);
       active_workers++;
     }
 
-    /* Dynamic dispatch loop: receive finished chunk -> immediately send next
-     * chunk */
     while (active_workers > 0) {
-      double cm0 = MPI_Wtime();
-      int worker_rank = receive_tile_result(MPI_ANY_SOURCE, dst_img, new_w);
-      t_comm_acc += (MPI_Wtime() - cm0);
+      int worker_rank = receive_tile_result(MPI_ANY_SOURCE, dst_img, new_w,
+                                            &t_comm_acc, &t_pack_acc);
 
       if (next_chunk < num_chunks) {
         TaskMeta *t = &chunks[next_chunk++];
-        double cm1 = MPI_Wtime();
-        send_tile_task(worker_rank, t, src_img);
-        t_comm_acc += (MPI_Wtime() - cm1);
+        send_tile_task(worker_rank, t, src_img, &t_comm_acc, &t_pack_acc);
       } else {
         active_workers--;
       }
@@ -545,6 +523,7 @@ void execute_operation_coordinator(OpType op, ModeType mode, int blur_radius,
   double t_total = MPI_Wtime() - t_start;
   timing->total += t_total;
   timing->transfer += t_comm_acc;
+  timing->pack_unpack += t_pack_acc;
   timing->computation += t_comp_acc;
 
   free(src_img);
@@ -577,12 +556,10 @@ double worker_loop(void) {
     MPI_Recv(in_buf, in_bytes, MPI_UNSIGNED_CHAR, 0, TAG_TASK_DATA,
              MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-    /* Perform matrix computation */
     double compute_start = MPI_Wtime();
     process_submatrix(&meta, in_buf, out_buf);
     computation_time += MPI_Wtime() - compute_start;
 
-    /* Send processed submatrix back to Coordinator */
     MPI_Send(&meta, sizeof(TaskMeta), MPI_BYTE, 0, TAG_RESULT_META,
              MPI_COMM_WORLD);
     MPI_Send(out_buf, out_bytes, MPI_UNSIGNED_CHAR, 0, TAG_RESULT_DATA,
@@ -613,7 +590,6 @@ OpType parse_op(const char *str) {
   return OP_NONE;
 }
 
-/* A size belongs to one blur stage; plain blur always uses the default. */
 static int parse_pipeline_step(const char *token, OpType *op, int *blur_radius) {
   *op = parse_op(token);
   *blur_radius = DEFAULT_BLUR_KERNEL_SIZE / 2;
@@ -673,7 +649,6 @@ int main(int argc, char *argv[]) {
     const char *pipe_str = argv[4];
 
     ModeType mode = parse_mode(mode_str);
-    /* Validate every stage before processing or opening the output file. */
     char *pipe_copy = strdup(pipe_str);
     if (!pipe_copy) {
       fprintf(stderr, "Error: Cannot allocate pipeline.\n");
@@ -691,7 +666,6 @@ int main(int argc, char *argv[]) {
       }
       token = strtok(NULL, ",");
     }
-    /* Restore the separators overwritten by strtok for the execution pass. */
     strcpy(pipe_copy, pipe_str);
     int width = 0, height = 0;
     unsigned char *img = read_ppm(in_file, &width, &height);
@@ -702,7 +676,6 @@ int main(int argc, char *argv[]) {
     init_w = width;
     init_h = height;
 
-    /* Parse comma-separated pipeline of operations */
     token = strtok(pipe_copy, ",");
     while (token != NULL) {
       OpType op;
@@ -718,15 +691,12 @@ int main(int argc, char *argv[]) {
     }
     free(pipe_copy);
 
-    /* Terminate all workers */
     for (int w = 1; w < size; w++) {
       TaskMeta dummy = {0};
       MPI_Send(&dummy, sizeof(TaskMeta), MPI_BYTE, w, TAG_TERMINATE,
                MPI_COMM_WORLD);
     }
 
-    /* Write output image (skip disk write if output is "NONE" during pure
-     * benchmarking) */
     if (strcmp(out_file, "NONE") != 0) {
       write_ppm(out_file, img, width, height);
     }
@@ -735,16 +705,14 @@ int main(int argc, char *argv[]) {
     timing.computation = worker_loop();
   }
 
-  /* Sum each rank's pixel-processing intervals across the whole pipeline,
-   * then report the largest rank total, not a sum of per-operation maxima. */
   double max_computation_time = 0.0;
   MPI_Reduce(&timing.computation, &max_computation_time, 1, MPI_DOUBLE, MPI_MAX,
              0, MPI_COMM_WORLD);
   if (rank == 0) {
-    /* Preserve the CSV field order: total, coordinator transfer, computation. */
-    printf("BENCHMARK,%s,%s,%d,%d,%d,%.6f,%.6f,%.6f\n", argv[4], argv[3],
+    /* Fields: BENCHMARK,op,mode,w,h,np,total,comm,pack_unpack,comp */
+    printf("BENCHMARK,%s,%s,%d,%d,%d,%.6f,%.6f,%.6f,%.6f\n", argv[4], argv[3],
            init_w, init_h, size, timing.total, timing.transfer,
-           max_computation_time);
+           timing.pack_unpack, max_computation_time);
     fflush(stdout);
   }
 

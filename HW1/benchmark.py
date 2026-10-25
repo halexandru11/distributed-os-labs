@@ -137,13 +137,14 @@ def run_mpi_job(np_count, in_img, out_img, mode, pipeline, host_override=None):
         if line.startswith("BENCHMARK,"):
             parts = line.strip().split(",")
             return {
-                "op": ",".join(parts[1:-7]),
-                "mode": parts[-7],
-                "width": int(parts[-6]),
-                "height": int(parts[-5]),
-                "np": int(parts[-4]),
-                "total": float(parts[-3]),
-                "comm": float(parts[-2]),
+                "op": ",".join(parts[1:-8]),
+                "mode": parts[-8],
+                "width": int(parts[-7]),
+                "height": int(parts[-6]),
+                "np": int(parts[-5]),
+                "total": float(parts[-4]),
+                "comm": float(parts[-3]),
+                "pack": float(parts[-2]),
                 "comp": float(parts[-1]),
             }
     raise RuntimeError(f"Nu s-a găsit linia BENCHMARK:\n{res.stdout}\n{res.stderr}")
@@ -204,46 +205,51 @@ def run_benchmark_suite(hosts=None):
     with open(CSV_FILE, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["res_label", "width", "height", "megapixels", "op", "mode", "np", "workers",
-                         "avg_total_s", "avg_comm_s", "avg_comp_s", "speedup", "efficiency"])
+                         "avg_total_s", "avg_comm_s", "avg_pack_s", "avg_comp_s", "speedup", "efficiency"])
 
         for (res_label, img_path, op, mode, np_val) in jobs:
-            t_tot = []
+            t_tot, t_comm, t_pack, t_comp = [], [], [], []
             w_px, h_px = 0, 0
             for r in range(reps):
                 TermUI.progress(cur, total_runs, t0, prefix=f"{res_label}|{op[:8]}|{mode[:7]}|np={np_val}", stat=last_str)
                 res = run_mpi_job(np_val, img_path, "NONE", mode, op, hosts)
                 t_tot.append(res["total"])
+                t_comm.append(res["comm"])
+                t_pack.append(res["pack"])
+                t_comp.append(res["comp"])
                 w_px, h_px = res["width"], res["height"]
                 cur += 1
 
             avg_tot = sum(t_tot) / len(t_tot)
+            avg_pack = sum(t_pack) / len(t_pack)
+            avg_comp = sum(t_comp) / len(t_comp)
             mp = round((w_px * h_px) / 1e6, 2)
             workers = 1 if mode == "seq" else (np_val - 1)
 
             if mode == "seq":
                 seq_map[(res_label, op)] = avg_tot
-                avg_comp = avg_tot
                 avg_comm = 0.0
+                avg_pack = 0.0
                 speedup, eff = 1.0, 1.0
             else:
                 base = seq_map.get((res_label, op), avg_tot)
                 speedup = base / avg_tot if avg_tot > 0 else 1.0
                 eff = speedup / workers if workers > 0 else 0.0
-                avg_comp = base / workers
-                avg_comm = max(0.001, avg_tot - avg_comp)
+                # Pure communication overhead (excluding computation and pack/unpack)
+                avg_comm = max(0.0001, avg_tot - avg_comp - avg_pack)
 
-            last_str = f"{avg_tot:.3f}s ({speedup:.2f}x)"
+            last_str = f"{avg_tot:.3f}s (pack={avg_pack:.4f}s, {speedup:.2f}x)"
             TermUI.progress(cur, total_runs, t0, prefix="Finalizat", stat=last_str)
 
             row = {
                 "res_label": res_label, "width": w_px, "height": h_px, "megapixels": mp,
                 "op": op, "mode": mode, "np": np_val, "workers": workers,
-                "avg_total_s": avg_tot, "avg_comm_s": avg_comm, "avg_comp_s": avg_comp,
-                "speedup": speedup, "efficiency": eff
+                "avg_total_s": avg_tot, "avg_comm_s": avg_comm, "avg_pack_s": avg_pack,
+                "avg_comp_s": avg_comp, "speedup": speedup, "efficiency": eff
             }
             aggregated.append(row)
             writer.writerow([res_label, w_px, h_px, mp, op, mode, np_val, workers,
-                             f"{avg_tot:.5f}", f"{avg_comm:.5f}", f"{avg_comp:.5f}",
+                             f"{avg_tot:.5f}", f"{avg_comm:.5f}", f"{avg_pack:.5f}", f"{avg_comp:.5f}",
                              f"{speedup:.3f}", f"{eff:.3f}"])
             f.flush()
 
@@ -358,19 +364,23 @@ def generate_detailed_report(results, max_res_label, mid_np, hosts, sample_outpu
     fig3.tight_layout(rect=[0, 0.03, 1, 0.92])
     figure3 = figure_to_markdown(fig3, "resolution_scaling.png", "Scalabilitatea cu rezoluția imaginii")
 
-    # Figura 4: Împărțire Slicing
+    # Figura 4: Împărțire Slicing (cu Pack/Unpack evidențiat separat)
     fig4, (ax4a, ax4b) = plt.subplots(1, 2, figsize=(13, 5))
     fig4.suptitle(f"Analiza Strategiilor de Divizare și Load-Balancing (np={mid_np}, {max_res_label})", fontsize=13, fontweight="bold")
     
     modes_test = ["static_1d", "static_2d", "dynamic_1d"]
-    comp_blur, comm_blur = [], []
+    comp_blur, pack_blur, comm_blur = [], [], []
     for m in modes_test:
         r = next((x for x in results if x["res_label"] == max_res_label and x["op"] == "blur" and x["mode"] == m and x["np"] == mid_np), None)
         comp_blur.append(r["avg_comp_s"] if r else 0)
+        pack_blur.append(r["avg_pack_s"] if r else 0)
         comm_blur.append(r["avg_comm_s"] if r else 0)
 
-    ax4a.bar(range(len(modes_test)), comp_blur, label="Calcul CPU", color="#2b5c8f")
-    ax4a.bar(range(len(modes_test)), comm_blur, bottom=comp_blur, label="Comunicație MPI + Overhead", color="#e07a5f")
+    b_pack_blur = np.array(comp_blur)
+    b_comm_blur = b_pack_blur + np.array(pack_blur)
+    ax4a.bar(range(len(modes_test)), comp_blur, label="Calcul CPU (Workers)", color="#2A6F97")
+    ax4a.bar(range(len(modes_test)), pack_blur, bottom=b_pack_blur, label="Pack / Unpack Submatrice", color="#E09F3E")
+    ax4a.bar(range(len(modes_test)), comm_blur, bottom=b_comm_blur, label="Comunicație MPI + Sincronizare", color="#9E2A2B")
     ax4a.set_xticks(range(len(modes_test)))
     ax4a.set_xticklabels(modes_test)
     ax4a.set_title("Box Blur (Calcul Intensiv per Pixel)", fontweight="bold", fontsize=10)
@@ -378,14 +388,18 @@ def generate_detailed_report(results, max_res_label, mid_np, hosts, sample_outpu
     ax4a.grid(True, axis="y", linestyle=":", alpha=0.6)
     ax4a.legend(fontsize=8)
 
-    comp_pipe, comm_pipe = [], []
+    comp_pipe, pack_pipe, comm_pipe = [], [], []
     for m in modes_test:
         r = next((x for x in results if x["res_label"] == max_res_label and x["op"] == "grayscale,blur,flip" and x["mode"] == m and x["np"] == mid_np), None)
         comp_pipe.append(r["avg_comp_s"] if r else 0)
+        pack_pipe.append(r["avg_pack_s"] if r else 0)
         comm_pipe.append(r["avg_comm_s"] if r else 0)
 
-    ax4b.bar(range(len(modes_test)), comp_pipe, label="Calcul CPU", color="#2b5c8f")
-    ax4b.bar(range(len(modes_test)), comm_pipe, bottom=comp_pipe, label="Comunicație MPI + Overhead", color="#e07a5f")
+    b_pack_pipe = np.array(comp_pipe)
+    b_comm_pipe = b_pack_pipe + np.array(pack_pipe)
+    ax4b.bar(range(len(modes_test)), comp_pipe, label="Calcul CPU (Workers)", color="#2A6F97")
+    ax4b.bar(range(len(modes_test)), pack_pipe, bottom=b_pack_pipe, label="Pack / Unpack Submatrice", color="#E09F3E")
+    ax4b.bar(range(len(modes_test)), comm_pipe, bottom=b_comm_pipe, label="Comunicație MPI + Sincronizare", color="#9E2A2B")
     ax4b.set_xticks(range(len(modes_test)))
     ax4b.set_xticklabels(modes_test)
     ax4b.set_title("Full Pipeline (Înlănțuire Filtre Grafice)", fontweight="bold", fontsize=10)
@@ -398,12 +412,16 @@ def generate_detailed_report(results, max_res_label, mid_np, hosts, sample_outpu
 
     tbl = [
         f"### Tabel Sintetic al Rezultatelor Măsurate (Rezoluție: `{max_res_label}`)\n\n",
-        "| Operație | Mod Paralelizare | Procese (`np`) | Workers | Timp Total (s) | Calcul CPU (s) | Comunicație MPI (s) | Speedup ($S_p$) |\n",
-        "| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |\n"
+        "| Operație | Mod Paralelizare | Procese (`np`) | Workers | Timp Total (s) | Calcul CPU (s) | Pack/Unpack (s) | Comunicație MPI (s) | Speedup ($S_p$) |\n",
+        "| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |\n"
     ]
     for r in results:
         if r["res_label"] == max_res_label:
-            tbl.append(f"| `{r['op']}` | `{r['mode']}` | {r['np']} | {r['workers']} | **{r['avg_total_s']:.4f}s** | {r['avg_comp_s']:.4f}s | {r['avg_comm_s']:.4f}s | **{r['speedup']:.2f}x** |\n")
+            tbl.append(
+                f"| `{r['op']}` | `{r['mode']}` | {r['np']} | {r['workers']} | "
+                f"**{r['avg_total_s']:.4f}s** | {r['avg_comp_s']:.4f}s | "
+                f"{r['avg_pack_s']:.4f}s | {r['avg_comm_s']:.4f}s | **{r['speedup']:.2f}x** |\n"
+            )
 
     cluster_str = f"Cluster Multi-Node (`{hosts}`)" if hosts else "Single Machine (Local Multi-Core)"
     sections = [
