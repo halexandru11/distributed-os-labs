@@ -6,25 +6,25 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* MPI Message Tags */
+/* Separate metadata, pixel payload, result, and shutdown messages. */
 #define TAG_TASK_META 10
 #define TAG_TASK_DATA 11
 #define TAG_RESULT_META 12
 #define TAG_RESULT_DATA 13
 #define TAG_TERMINATE 99
 
-/* Operation IDs */
+/* Image operations supported by the pipeline parser. */
 typedef enum {
   OP_NONE = 0,
-  OP_GRAYSCALE = 1, /* Cat 1: Color in-place */
-  OP_INVERT = 2,    /* Cat 1: Color in-place */
-  OP_SEPIA = 3,     /* Cat 1: Color in-place */
-  OP_BLUR = 4,      /* Cat 2: Neighborhood (Box Blur) */
-  OP_FLIP_H = 5,    /* Cat 3: Move pixels (Horizontal Flip) */
-  OP_ROTATE90 = 6   /* Cat 3: Move pixels + change dimensions (90 deg CW) */
+  OP_GRAYSCALE = 1,
+  OP_INVERT = 2,
+  OP_SEPIA = 3,
+  OP_BLUR = 4,
+  OP_FLIP_H = 5,
+  OP_ROTATE90 = 6
 } OpType;
 
-/* Parallelization Mode IDs */
+/* Scheduling strategies selected on the command line. */
 typedef enum {
   MODE_SEQ = 0,
   MODE_STATIC_1D = 1,
@@ -32,20 +32,20 @@ typedef enum {
   MODE_DYNAMIC_1D = 3
 } ModeType;
 
-/* Task descriptor sent from Coordinator (Rank 0) to Workers */
+/* Task descriptor exchanged between rank 0 and a worker.
+ * Output coordinates refer to the destination image. Input coordinates refer
+ * to the source tile sent with the task; for blur, that tile includes a halo. */
 typedef struct {
   int op;
   int blur_radius;
   int orig_w;
   int orig_h;
-  /* Output region (in destination image coordinates) this worker is responsible
-   * for */
+  /* Region produced by this task, in destination-image coordinates. */
   int out_x;
   int out_y;
   int out_w;
   int out_h;
-  /* Input region (in source image coordinates, including halo/ghost cells) sent
-   * to worker */
+  /* Source region sent to the worker, including any required halo cells. */
   int in_x;
   int in_y;
   int in_w;
@@ -64,20 +64,25 @@ typedef struct {
   int height;
 } TileRegion;
 
-/* Durations overlap across ranks, so total is not transfer + computation.
- * All fields exclude image I/O, worker shutdown, and the final timing reduction. */
+/* Per-worker timings gathered after the worker receives its shutdown message. */
 typedef struct {
-  double total;       /* Coordinator execution intervals across the pipeline. */
-  double transfer;    /* Blocking MPI time on rank 0, including worker waits. */
-  double pack_unpack; /* Tile packing/unpacking, including scratch allocation. */
-  double computation; /* Local pixel processing; take MPI_MAX at shutdown. */
+  double comp; /* Time spent inside process_submatrix. */
+  double ops;  /* Allocation and task/result payload transfer time. */
+} WorkerStats;
+
+/* Coordinator and worker clocks overlap, so these values are not additive.
+ * Image I/O, shutdown, and the final statistics reduction are excluded. */
+typedef struct {
+  double total;         /* Wall time spent executing all pipeline operations. */
+  double transfer_send; /* Rank 0's blocking sends while dispatching tasks. */
+  double transfer_wait; /* Rank 0's blocking receives, including worker waits. */
+  double pack_unpack;   /* Tile copies and temporary-buffer allocation. */
+  double computation;   /* Sequential local processing time, when applicable. */
 } ExecutionTiming;
 
 #define DEFAULT_BLUR_KERNEL_SIZE 9
 
-/* =========================================================================
- * PPM (P6) Image I/O (Direct Memory Matrix Representation)
- * ========================================================================= */
+/* PPM (P6) I/O. Pixels are stored row-major as RGB triples. */
 unsigned char *read_ppm(const char *filename, int *width, int *height) {
   FILE *fp = fopen(filename, "rb");
   if (!fp) {
@@ -92,7 +97,7 @@ unsigned char *read_ppm(const char *filename, int *width, int *height) {
     return NULL;
   }
 
-  /* Skip comments and whitespace */
+  /* P6 headers may contain whitespace and comments between fields. */
   int c = getc(fp);
   while (isspace(c) || c == '#') {
     if (c == '#') {
@@ -109,7 +114,7 @@ unsigned char *read_ppm(const char *filename, int *width, int *height) {
     fclose(fp);
     return NULL;
   }
-  fgetc(fp); /* consume single whitespace byte after maxval */
+  fgetc(fp); /* Consume the separator before the binary pixel payload. */
 
   size_t num_bytes = (size_t)(*width) * (*height) * 3;
   unsigned char *data = (unsigned char *)malloc(num_bytes);
@@ -145,9 +150,8 @@ int write_ppm(const char *filename, const unsigned char *data, int width,
   return 1;
 }
 
-/* =========================================================================
- * Core Pixel Matrix Operations (Applied to a Submatrix / Tile)
- * ========================================================================= */
+/* Apply one operation to a task tile. Output coordinates are local to out_buf;
+ * blur and geometric operations use TaskMeta to map them back to source pixels. */
 void process_submatrix(const TaskMeta *meta, const unsigned char *in_buf,
                        unsigned char *out_buf) {
   int out_w = meta->out_w;
@@ -225,6 +229,7 @@ void process_submatrix(const TaskMeta *meta, const unsigned char *in_buf,
 }
 
 static ImageSize operation_output_size(OpType op, ImageSize input) {
+  /* A clockwise rotation swaps the destination dimensions. */
   if (op == OP_ROTATE90) {
     return (ImageSize){input.height, input.width};
   }
@@ -243,12 +248,14 @@ static TaskMeta make_tile_task(OpType op, int blur_radius, ImageSize input,
                    .out_h = output.height};
   if (output.width == 0 || output.height == 0)
     return task;
+  /* Point-wise operations read the same rectangle they produce. */
   if (task.op == OP_GRAYSCALE || task.op == OP_INVERT || task.op == OP_SEPIA) {
     task.in_x = task.out_x;
     task.in_y = task.out_y;
     task.in_w = task.out_w;
     task.in_h = task.out_h;
   } else if (task.op == OP_BLUR) {
+    /* Expand the source rectangle by the blur radius, clipped to the image. */
     int x0 = task.out_x - blur_radius;
     int y0 = task.out_y - blur_radius;
     int x1 = task.out_x + task.out_w;
@@ -264,11 +271,13 @@ static TaskMeta make_tile_task(OpType op, int blur_radius, ImageSize input,
     task.in_w = x1 - x0;
     task.in_h = y1 - y0;
   } else if (task.op == OP_FLIP_H) {
+    /* A horizontal flip maps the output rectangle to its mirrored source. */
     task.in_x = task.orig_w - (task.out_x + task.out_w);
     task.in_y = task.out_y;
     task.in_w = task.out_w;
     task.in_h = task.out_h;
   } else if (task.op == OP_ROTATE90) {
+    /* Rotation maps a destination tile to a transposed source rectangle. */
     task.in_x = task.out_y;
     task.in_y = task.orig_h - (task.out_x + task.out_w);
     task.in_w = task.out_h;
@@ -277,7 +286,7 @@ static TaskMeta make_tile_task(OpType op, int blur_radius, ImageSize input,
   return task;
 }
 
-/* Pack a 2D submatrix from full image into a contiguous buffer */
+/* Copy a source rectangle into the row-major buffer expected by a worker. */
 void pack_submatrix(const unsigned char *full_img, int full_w, int sub_x,
                     int sub_y, int sub_w, int sub_h,
                     unsigned char *packed_buf) {
@@ -289,7 +298,7 @@ void pack_submatrix(const unsigned char *full_img, int full_w, int sub_x,
   }
 }
 
-/* Unpack a contiguous buffer back into a 2D submatrix of the full output image */
+/* Copy a worker result from a contiguous buffer into the destination image. */
 void unpack_submatrix(const unsigned char *packed_buf, unsigned char *full_img,
                       int full_w, int sub_x, int sub_y, int sub_w, int sub_h) {
   for (int r = 0; r < sub_h; r++) {
@@ -300,11 +309,10 @@ void unpack_submatrix(const unsigned char *packed_buf, unsigned char *full_img,
   }
 }
 
-/* =========================================================================
- * Tile Transfer: blocking metadata and pixel messages, with owned scratch
- * buffers and separate timing for pack/unpack vs MPI communication
- * ========================================================================= */
+/* Tile transfer uses blocking metadata and pixel messages. Scratch buffers are
+ * owned by the transfer functions so packing costs can be measured separately. */
 static int tile_byte_count(int width, int height) {
+  /* MPI counts are int-sized, so reject an oversized RGB tile explicitly. */
   if (width < 0 || height < 0 ||
       (height != 0 && (size_t)width > (size_t)INT_MAX / 3 / (size_t)height)) {
     fprintf(stderr, "Error: Tile exceeds the MPI message count limit.\n");
@@ -325,12 +333,13 @@ static unsigned char *allocate_tile(int bytes) {
 }
 
 static void send_tile_task(int worker_rank, const TaskMeta *task,
-                           const unsigned char *source, double *t_comm,
+                           const unsigned char *source, double *t_send,
                            double *t_pack) {
   int bytes = tile_byte_count(task->in_w, task->in_h);
   unsigned char *packed = NULL;
   const unsigned char *pixels = source;
   if (bytes > 0) {
+    /* A full-width tile is already contiguous in the row-major image. */
     if (task->in_x == 0 && task->in_w == task->orig_w) {
       pixels = source + (size_t)task->in_y * task->orig_w * 3;
     } else {
@@ -347,23 +356,24 @@ static void send_tile_task(int worker_rank, const TaskMeta *task,
            MPI_COMM_WORLD);
   MPI_Send(pixels, bytes, MPI_UNSIGNED_CHAR, worker_rank, TAG_TASK_DATA,
            MPI_COMM_WORLD);
-  *t_comm += (MPI_Wtime() - c0);
+  *t_send += (MPI_Wtime() - c0);
   free(packed);
 }
 
 static int receive_tile_result(int worker_rank, unsigned char *destination,
-                               int width, double *t_comm, double *t_unpack) {
+                               int width, double *t_wait, double *t_unpack) {
   TaskMeta task;
   MPI_Status status;
   double c0 = MPI_Wtime();
   MPI_Recv(&task, sizeof(task), MPI_BYTE, worker_rank, TAG_RESULT_META,
            MPI_COMM_WORLD, &status);
-  *t_comm += (MPI_Wtime() - c0);
+  *t_wait += (MPI_Wtime() - c0);
 
   int bytes = tile_byte_count(task.out_w, task.out_h);
   unsigned char *packed = NULL;
   unsigned char *pixels = destination;
   if (bytes > 0) {
+    /* Results spanning the full width can be received directly into dst_img. */
     if (task.out_x == 0 && task.out_w == width) {
       pixels = destination + (size_t)task.out_y * width * 3;
     } else {
@@ -377,7 +387,7 @@ static int receive_tile_result(int worker_rank, unsigned char *destination,
   double c1 = MPI_Wtime();
   MPI_Recv(pixels, bytes, MPI_UNSIGNED_CHAR, status.MPI_SOURCE, TAG_RESULT_DATA,
            MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-  *t_comm += (MPI_Wtime() - c1);
+  *t_wait += (MPI_Wtime() - c1);
 
   if (packed) {
     double p1 = MPI_Wtime();
@@ -389,9 +399,7 @@ static int receive_tile_result(int worker_rank, unsigned char *destination,
   return status.MPI_SOURCE;
 }
 
-/* =========================================================================
- * Coordinator Execution for One Operation in the Pipeline
- * ========================================================================= */
+/* Execute one pipeline stage and replace the input image with its result. */
 void execute_operation_coordinator(OpType op, ModeType mode, int blur_radius,
                                    int num_procs, unsigned char **img_ptr, int *w_ptr,
                                    int *h_ptr, ExecutionTiming *timing) {
@@ -406,13 +414,14 @@ void execute_operation_coordinator(OpType op, ModeType mode, int blur_radius,
   unsigned char *dst_img = (unsigned char *)malloc((size_t)new_w * new_h * 3);
 
   double t_start = MPI_Wtime();
-  double t_comm_acc = 0.0;
+  double t_send_acc = 0.0;
+  double t_wait_acc = 0.0;
   double t_pack_acc = 0.0;
   double t_comp_acc = 0.0;
 
   int num_workers = num_procs - 1;
 
-  /* 1. SEQUENTIAL MODE (or if launched with -np 1) */
+  /* Sequential mode also handles a launch with no worker ranks. */
   if (mode == MODE_SEQ || num_workers < 1) {
     TaskMeta meta = make_tile_task(op, blur_radius, input,
                                    (TileRegion){0, 0, new_w, new_h});
@@ -420,7 +429,7 @@ void execute_operation_coordinator(OpType op, ModeType mode, int blur_radius,
     process_submatrix(&meta, src_img, dst_img);
     t_comp_acc += (MPI_Wtime() - c0);
   }
-  /* 2. STATIC 1D (Horizontal Strips) */
+  /* Static 1D: divide the output into horizontal strips once. */
   else if (mode == MODE_STATIC_1D) {
     int rows_per_worker = new_h / num_workers;
     int rem = new_h % num_workers;
@@ -436,16 +445,16 @@ void execute_operation_coordinator(OpType op, ModeType mode, int blur_radius,
                                 (TileRegion){0, cur_y, new_w, h_slice});
       cur_y += h_slice;
 
-      send_tile_task(worker_rank, &tasks[w], src_img, &t_comm_acc, &t_pack_acc);
+      send_tile_task(worker_rank, &tasks[w], src_img, &t_send_acc, &t_pack_acc);
     }
 
     for (int w = 0; w < num_workers; w++) {
       int worker_rank = w + 1;
-      receive_tile_result(worker_rank, dst_img, new_w, &t_comm_acc, &t_pack_acc);
+      receive_tile_result(worker_rank, dst_img, new_w, &t_wait_acc, &t_pack_acc);
     }
     free(tasks);
   }
-  /* 3. STATIC 2D (Grid Tiles) */
+  /* Static 2D: use the largest near-square factorization of worker count. */
   else if (mode == MODE_STATIC_2D) {
     int grid_cols = 1, grid_rows = num_workers;
     for (int i = 1; i * i <= num_workers; i++) {
@@ -469,7 +478,7 @@ void execute_operation_coordinator(OpType op, ModeType mode, int blur_radius,
         tasks[w_idx] = make_tile_task(op, blur_radius, input,
                                       (TileRegion){x0, y0, x1 - x0, y1 - y0});
 
-        send_tile_task(worker_rank, &tasks[w_idx], src_img, &t_comm_acc,
+        send_tile_task(worker_rank, &tasks[w_idx], src_img, &t_send_acc,
                        &t_pack_acc);
         w_idx++;
       }
@@ -477,12 +486,13 @@ void execute_operation_coordinator(OpType op, ModeType mode, int blur_radius,
 
     for (int w = 0; w < num_workers; w++) {
       int worker_rank = w + 1;
-      receive_tile_result(worker_rank, dst_img, new_w, &t_comm_acc, &t_pack_acc);
+      receive_tile_result(worker_rank, dst_img, new_w, &t_wait_acc, &t_pack_acc);
     }
     free(tasks);
   }
-  /* 4. DYNAMIC 1D (Master-Worker Pool with Fine-Grained Chunks) */
+  /* Dynamic 1D: keep a worker busy by assigning its next chunk on completion. */
   else if (mode == MODE_DYNAMIC_1D) {
+    /* More chunks improve load balance without creating an excessive queue. */
     int num_chunks = num_workers * 6;
     if (num_chunks > new_h)
       num_chunks = new_h;
@@ -502,17 +512,17 @@ void execute_operation_coordinator(OpType op, ModeType mode, int blur_radius,
 
     for (int w = 1; w <= num_workers && next_chunk < num_chunks; w++) {
       TaskMeta *t = &chunks[next_chunk++];
-      send_tile_task(w, t, src_img, &t_comm_acc, &t_pack_acc);
+      send_tile_task(w, t, src_img, &t_send_acc, &t_pack_acc);
       active_workers++;
     }
 
     while (active_workers > 0) {
       int worker_rank = receive_tile_result(MPI_ANY_SOURCE, dst_img, new_w,
-                                            &t_comm_acc, &t_pack_acc);
+                                            &t_wait_acc, &t_pack_acc);
 
       if (next_chunk < num_chunks) {
         TaskMeta *t = &chunks[next_chunk++];
-        send_tile_task(worker_rank, t, src_img, &t_comm_acc, &t_pack_acc);
+        send_tile_task(worker_rank, t, src_img, &t_send_acc, &t_pack_acc);
       } else {
         active_workers--;
       }
@@ -522,7 +532,8 @@ void execute_operation_coordinator(OpType op, ModeType mode, int blur_radius,
 
   double t_total = MPI_Wtime() - t_start;
   timing->total += t_total;
-  timing->transfer += t_comm_acc;
+  timing->transfer_send += t_send_acc;
+  timing->transfer_wait += t_wait_acc;
   timing->pack_unpack += t_pack_acc;
   timing->computation += t_comp_acc;
 
@@ -532,11 +543,9 @@ void execute_operation_coordinator(OpType op, ModeType mode, int blur_radius,
   *h_ptr = new_h;
 }
 
-/* =========================================================================
- * Worker Event Loop (Ranks 1 .. N-1)
- * ========================================================================= */
-double worker_loop(void) {
-  double computation_time = 0.0;
+/* Workers repeatedly receive, process, and return one tile until shutdown. */
+WorkerStats worker_loop(void) {
+  WorkerStats stats = {0.0, 0.0};
   while (1) {
     MPI_Status status;
     TaskMeta meta;
@@ -547,6 +556,8 @@ double worker_loop(void) {
       break;
     }
 
+    /* Include allocation and payload receive in the worker's operations time. */
+    double t_op0 = MPI_Wtime();
     int in_bytes = tile_byte_count(meta.in_w, meta.in_h);
     int out_bytes = tile_byte_count(meta.out_w, meta.out_h);
 
@@ -555,11 +566,14 @@ double worker_loop(void) {
 
     MPI_Recv(in_buf, in_bytes, MPI_UNSIGNED_CHAR, 0, TAG_TASK_DATA,
              MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    stats.ops += (MPI_Wtime() - t_op0);
 
     double compute_start = MPI_Wtime();
     process_submatrix(&meta, in_buf, out_buf);
-    computation_time += MPI_Wtime() - compute_start;
+    stats.comp += (MPI_Wtime() - compute_start);
 
+    /* Return the same metadata so rank 0 knows where to place the result. */
+    double t_op1 = MPI_Wtime();
     MPI_Send(&meta, sizeof(TaskMeta), MPI_BYTE, 0, TAG_RESULT_META,
              MPI_COMM_WORLD);
     MPI_Send(out_buf, out_bytes, MPI_UNSIGNED_CHAR, 0, TAG_RESULT_DATA,
@@ -567,8 +581,9 @@ double worker_loop(void) {
 
     free(in_buf);
     free(out_buf);
+    stats.ops += (MPI_Wtime() - t_op1);
   }
-  return computation_time;
+  return stats;
 }
 
 /* =========================================================================
@@ -624,6 +639,7 @@ ModeType parse_mode(const char *str) {
 int main(int argc, char *argv[]) {
   int rank, size;
   ExecutionTiming timing = {0};
+  WorkerStats my_worker_stats = {0.0, 0.0};
   int init_w = 0, init_h = 0;
   MPI_Init(&argc, &argv);
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -702,18 +718,46 @@ int main(int argc, char *argv[]) {
     }
     free(img);
   } else {
-    timing.computation = worker_loop();
+    my_worker_stats = worker_loop();
   }
 
-  double max_computation_time = 0.0;
-  MPI_Reduce(&timing.computation, &max_computation_time, 1, MPI_DOUBLE, MPI_MAX,
-             0, MPI_COMM_WORLD);
+  /* Gather timings once all workers have completed their assigned tiles. */
+  WorkerStats *all_worker_stats = NULL;
   if (rank == 0) {
-    /* Fields: BENCHMARK,op,mode,w,h,np,total,comm,pack_unpack,comp */
-    printf("BENCHMARK,%s,%s,%d,%d,%d,%.6f,%.6f,%.6f,%.6f\n", argv[4], argv[3],
-           init_w, init_h, size, timing.total, timing.transfer,
-           timing.pack_unpack, max_computation_time);
+    all_worker_stats = (WorkerStats *)calloc((size_t)size, sizeof(WorkerStats));
+  }
+  MPI_Gather(&my_worker_stats, sizeof(WorkerStats), MPI_BYTE,
+             all_worker_stats, sizeof(WorkerStats), MPI_BYTE, 0, MPI_COMM_WORLD);
+
+  if (rank == 0) {
+    double total_comm = timing.transfer_send + timing.transfer_wait;
+    double max_comp = 0.0;
+    for (int i = 1; i < size; i++) {
+      if (all_worker_stats[i].comp > max_comp) {
+        max_comp = all_worker_stats[i].comp;
+      }
+    }
+    if (size == 1) {
+      max_comp = timing.computation;
+    }
+
+    /* CSV fields are followed by per-worker computation and operations times. */
+    printf("BENCHMARK,%s,%s,%d,%d,%d,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f",
+           argv[4], argv[3], init_w, init_h, size,
+           timing.total, total_comm, timing.pack_unpack, max_comp,
+           timing.transfer_send, timing.transfer_wait);
+
+    printf(";comp=");
+    for (int i = 1; i < size; i++) {
+      printf("%.6f%s", all_worker_stats[i].comp, (i == size - 1) ? "" : ":");
+    }
+    printf(";ops=");
+    for (int i = 1; i < size; i++) {
+      printf("%.6f%s", all_worker_stats[i].ops, (i == size - 1) ? "" : ":");
+    }
+    printf("\n");
     fflush(stdout);
+    free(all_worker_stats);
   }
 
   MPI_Finalize();

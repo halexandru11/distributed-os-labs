@@ -20,15 +20,22 @@ class BenchmarkTests(unittest.TestCase):
                          if (res, operation, strategy) == (label, op, mode)}, set(counts))
 
     def test_summary_uses_measured_mpi_time_and_sample_deviation(self):
-        run = dict(op='blur', mode='static_2d', np=5, width=9, height=7,
-                   total=0.1, comm=0.08, comp=0.07, pack=0.01)
+        run = dict(
+            op='blur', mode='static_2d', np=5, width=9, height=7,
+            total=0.1, comm=0.08, comp=0.07, pack=0.01,
+            send=0.01, wait=0.07,
+            workers_comp=[0.06, 0.07, 0.065, 0.058],
+            workers_ops=[0.002, 0.003, 0.002, 0.002]
+        )
         runs = [dict(run, total=t) for t in [0.1, 0.2, 0.3]]
         result = b.summarize_runs('test', runs, baseline=0.4)
         self.assertAlmostEqual(result['avg_comm_s'], 0.08)
         self.assertAlmostEqual(result['std_total_s'], 0.1)
-        self.assertAlmostEqual(result['speedup'], 2)
+        self.assertAlmostEqual(result['speedup'], 2.0)
         self.assertAlmostEqual(result['efficiency'], 0.5)
         self.assertEqual(result['repetitions'], 3)
+        self.assertEqual(len(result['workers_comp_ms']), 4)
+        self.assertAlmostEqual(result['workers_comp_ms'][1], 70.0)
 
     def test_pixel_check_reads_every_pixel_and_handles_rotated_dimensions(self):
         with tempfile.TemporaryDirectory() as d:
@@ -46,8 +53,10 @@ class BenchmarkTests(unittest.TestCase):
                 b.compare_pixels(expected, actual)
 
     def test_tables_keep_units_variation_and_highlight_minimum(self):
-        row = b.summarize_runs('8MP', [dict(op='grayscale', mode='seq', np=1,
-            width=9, height=7, total=t, comm=0, pack=0, comp=t) for t in [0.1, 0.2]], 0.15)
+        row = b.summarize_runs('8MP', [dict(
+            op='grayscale', mode='seq', np=1, width=9, height=7,
+            total=t, comm=0, pack=0, comp=t, send=0, wait=0,
+            workers_comp=[], workers_ops=[]) for t in [0.1, 0.2]], 0.15)
         other = dict(row)
         other.update(mode='static_1d', np=5, avg_total_s=0.3)
         text = b.render_result_tables([row, other], '8MP')
