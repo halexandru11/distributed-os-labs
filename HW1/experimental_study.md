@@ -2,7 +2,7 @@
 
 ## Metodologie
 
-Mediu: `local`. Fiecare configurație rulează de 5 ori. Graficele timpului arată media și abaterea standard între rulări. Speedup-ul folosește raportul mediilor `T_seq / T_par`, iar eficiența este `speedup / număr_workeri`. Coordonatorul nu procesează pixeli în modurile paralele. Aceste valori descriu rularea curentă și pot varia cu încărcarea sistemului.
+Mediu: `local`. Fiecare configurație rulează de 5 ori. Liniile din graficele timpului arată media, iar benzile semitransparente arată media ± abaterea standard între rulări. Speedup-ul folosește raportul mediilor `T_seq / T_par`, iar eficiența este `speedup / număr_workeri`. Coordonatorul nu procesează pixeli în modurile paralele. Aceste valori descriu rularea curentă și pot varia cu încărcarea sistemului.
 
 Toate cele patru operații folosesc aceleași configurații. Pe imaginea `8MP` testăm cele trei strategii cu `np` în [2, 3, 4, 5, 6, 8, 9]. Pentru variația rezoluției fixăm `np=5` și folosim imaginile `small`: 256×256, `1.5MP`: 1600×900, `4MP`: 2400×1600, `8MP`: 3840×2160. Configurațiile comune celor două experimente sunt măsurate o singură dată.
 

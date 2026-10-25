@@ -334,7 +334,7 @@ def generate_detailed_report(results, max_res_label, mid_np, hosts, sample_outpu
         "# Studiul experimental al prelucrării paralele de imagini în MPI",
         "## Metodologie",
         f"Mediu: `{hosts or 'local'}`. Fiecare configurație rulează de {REPETITIONS} ori. "
-        "Graficele timpului arată media și abaterea standard între rulări. "
+        "Liniile din graficele timpului arată media, iar benzile semitransparente arată media ± abaterea standard între rulări. "
         "Speedup-ul folosește raportul mediilor `T_seq / T_par`, iar eficiența "
         "este `speedup / număr_workeri`. Coordonatorul nu procesează pixeli în modurile paralele. "
         "Aceste valori descriu rularea curentă și pot varia cu încărcarea sistemului.",
@@ -379,8 +379,11 @@ def generate_detailed_report(results, max_res_label, mid_np, hosts, sample_outpu
                 multiplier = 1000 if metric == "avg_total_s" else 100 if metric == "efficiency" else 1
                 y = [r[metric] * multiplier for r in curve]
                 if metric == "avg_total_s":
-                    ax.errorbar(x, y, yerr=[r["std_total_s"] * 1000 for r in curve],
-                                marker="o", capsize=3, label=mode, color=colors[mode])
+                    deviation = np.array([r["std_total_s"] * 1000 for r in curve])
+                    ax.plot(x, y, marker="o", label=mode, color=colors[mode])
+                    ax.fill_between(x, np.maximum(0, np.array(y) - deviation),
+                                    np.array(y) + deviation, color=colors[mode], alpha=0.12,
+                                    linewidth=0)
                 else:
                     ax.plot(x, y, marker="o", label=mode, color=colors[mode])
             if metric == "avg_total_s":
@@ -419,9 +422,13 @@ def generate_detailed_report(results, max_res_label, mid_np, hosts, sample_outpu
         for mode in ["seq"] + MODES:
             curve = sorted([r for r in results if r["op"] == op and r["mode"] == mode
                             and (mode == "seq" or r["np"] == mid_np)], key=lambda r: r["megapixels"])
-            ax.errorbar([r["megapixels"] for r in curve], [r["avg_total_s"] * 1000 for r in curve],
-                        yerr=[r["std_total_s"] * 1000 for r in curve], marker="o", capsize=3,
-                        label=mode, color=colors.get(mode, "red"))
+            x = [r["megapixels"] for r in curve]
+            y = np.array([r["avg_total_s"] * 1000 for r in curve])
+            deviation = np.array([r["std_total_s"] * 1000 for r in curve])
+            color = colors.get(mode, "red")
+            ax.plot(x, y, marker="o", label=mode, color=color)
+            ax.fill_between(x, np.maximum(0, y - deviation), y + deviation,
+                            color=color, alpha=0.12, linewidth=0)
             if mode != "seq":
                 wins = [r for r in curve if r["speedup"] > 1]
                 finding = (f"primul câștig la `{wins[0]['res_label']}`, {wins[0]['speedup']:.2f}×"
