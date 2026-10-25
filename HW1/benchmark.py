@@ -5,6 +5,9 @@ import time
 import csv
 import argparse
 import subprocess
+import statistics
+import tempfile
+import shutil
 import numpy as np
 
 try:
@@ -22,6 +25,14 @@ CSV_FILE = "benchmark_results.csv"
 IMG_DIR  = "test_images"
 REPORT_FILE = "experimental_study.md"
 REPORT_IMG_DIR = "benchmark_figures"
+RAW_CSV_FILE = "benchmark_runs.csv"
+OPS = ["grayscale", "blur", "rotate90", "grayscale,blur,flip"]
+MODES = ["static_1d", "static_2d", "dynamic_1d"]
+RESOLUTIONS = [("small", 256, 256), ("1.5MP", 1600, 900),
+               ("4MP", 2400, 1600), ("8MP", 3840, 2160)]
+NP_LIST = [2, 3, 4, 5, 6, 8, 9]
+REPETITIONS = 5
+COMPARISON_NP = 5
 
 class TermUI:
     CYAN   = "\033[96m"
@@ -121,7 +132,7 @@ def read_ppm_for_plot(filepath, max_dim=700):
         raw = f.read(w * h * 3)
         arr = np.frombuffer(raw, dtype=np.uint8).reshape((h, w, 3))
         # Păstrăm o densitate mai mare a eșantionării pentru miniaturi
-        step = max(1, max(w, h) // max_dim)
+        step = max(1, max(w, h) // max_dim) if max_dim else 1
         return arr[::step, ::step, :], w, h
 
 def run_mpi_job(np_count, in_img, out_img, mode, pipeline, host_override=None):
@@ -149,129 +160,114 @@ def run_mpi_job(np_count, in_img, out_img, mode, pipeline, host_override=None):
             }
     raise RuntimeError(f"Nu s-a găsit linia BENCHMARK:\n{res.stdout}\n{res.stderr}")
 
-def run_benchmark_suite(hosts=None):
-    resolutions = [
-        ("1.5MP", 1600, 900),
-        ("4MP",   2400, 1600),
-        ("8MP",   3840, 2160),
-    ]
-    np_list = [1, 2, 3, 4, 5, 6, 8]
-    reps = 3
-
-    TermUI.banner("2. Pregătire Imagini de Test")
-    for label, w, h in resolutions:
-        p = os.path.join(IMG_DIR, f"sample_{label}.ppm")
-        print(f"  Imagine {label} ({w}x{h} px, {(w*h*3)/(1024*1024):.1f} MB) -> {p}")
-        generate_ppm_image(p, w, h)
-
-    sample_in = os.path.join(IMG_DIR, f"sample_{resolutions[0][0]}.ppm")
-    sample_ops = ["grayscale", "blur", "rotate90", "grayscale,blur,flip"]
-    sample_outputs = {"input": sample_in}
-    for op in sample_ops:
-        out_name = os.path.join(IMG_DIR, f"out_{op.replace(',', '_')}.ppm")
-        run_mpi_job(3, sample_in, out_name, "static_1d", op, hosts)
-        sample_outputs[op] = out_name
-    print(f"{TermUI.GREEN}✔ Imagini demonstrative generate.{TermUI.RESET}")
-
-    max_label, max_w, max_h = resolutions[-1]
-    max_img = os.path.join(IMG_DIR, f"sample_{max_label}.ppm")
-    # Four workers form a 2x2 grid in static_2d.
-    mid_np = 5
-
+def build_jobs():
+    """Share np=5 runs between the worker-count and image-size experiments."""
     jobs = []
-    for op in ["grayscale", "blur", "rotate90", "grayscale,blur,flip"]:
-        jobs.append((max_label, max_img, op, "seq", 1))
-        for np_val in [n for n in np_list if n > 1]:
-            jobs.append((max_label, max_img, op, "static_1d", np_val))
+    for label, _, _ in RESOLUTIONS:
+        for op in OPS:
+            jobs.append((label, op, "seq", 1))
+            counts = NP_LIST if label == RESOLUTIONS[-1][0] else [COMPARISON_NP]
+            for mode in MODES:
+                jobs.extend((label, op, mode, n) for n in counts)
+    return jobs
 
-    for op in ["blur", "grayscale,blur,flip"]:
-        for m in ["static_2d", "dynamic_1d"]:
-            jobs.append((max_label, max_img, op, m, mid_np))
 
-    for label, w, h in resolutions[:-1]:
-        p = os.path.join(IMG_DIR, f"sample_{label}.ppm")
-        for op in ["grayscale", "blur", "grayscale,blur,flip"]:
-            jobs.append((label, p, op, "seq", 1))
-            jobs.append((label, p, op, "static_1d", mid_np))
+def compare_pixels(reference, candidate):
+    expected, w, h = read_ppm_for_plot(reference, max_dim=None)
+    actual, aw, ah = read_ppm_for_plot(candidate, max_dim=None)
+    if (w, h) != (aw, ah):
+        raise RuntimeError(f"Dimensiuni diferite: {w}x{h} vs {aw}x{ah}")
+    delta = np.abs(expected.astype(np.int16) - actual.astype(np.int16))
+    return int(np.count_nonzero(np.any(delta != 0, axis=2))), int(delta.max())
 
-    total_runs = len(jobs) * reps
-    TermUI.banner(f"3. Rulare Măsurători ({len(jobs)} config x {reps} rep = {total_runs} rulări)")
 
-    aggregated = []
-    seq_map = {}
-    t0 = time.time()
-    cur = 0
-    last_str = ""
+def summarize_runs(label, runs, baseline):
+    first = runs[0]
+    total = statistics.mean(r["total"] for r in runs)
+    workers = 1 if first["mode"] == "seq" else first["np"] - 1
+    speedup = 1.0 if first["mode"] == "seq" else baseline / total
+    return {
+        "res_label": label, "width": first["width"], "height": first["height"],
+        "megapixels": first["width"] * first["height"] / 1e6,
+        "op": first["op"], "mode": first["mode"], "np": first["np"],
+        "workers": workers, "repetitions": len(runs), "avg_total_s": total,
+        "std_total_s": statistics.stdev(r["total"] for r in runs),
+        "avg_comm_s": statistics.mean(r["comm"] for r in runs),
+        "avg_pack_s": statistics.mean(r["pack"] for r in runs),
+        "avg_comp_s": statistics.mean(r["comp"] for r in runs),
+        "speedup": speedup, "efficiency": speedup / workers,
+    }
 
-    with open(CSV_FILE, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["res_label", "width", "height", "megapixels", "op", "mode", "np", "workers",
-                         "avg_total_s", "avg_comm_s", "avg_pack_s", "avg_comp_s", "speedup", "efficiency"])
 
-        for (res_label, img_path, op, mode, np_val) in jobs:
-            t_tot, t_comm, t_pack, t_comp = [], [], [], []
-            w_px, h_px = 0, 0
-            for r in range(reps):
-                TermUI.progress(cur, total_runs, t0, prefix=f"{res_label}|{op[:8]}|{mode[:7]}|np={np_val}", stat=last_str)
-                res = run_mpi_job(np_val, img_path, "NONE", mode, op, hosts)
-                t_tot.append(res["total"])
-                t_comm.append(res["comm"])
-                t_pack.append(res["pack"])
-                t_comp.append(res["comp"])
-                w_px, h_px = res["width"], res["height"]
-                cur += 1
-
-            avg_tot = sum(t_tot) / len(t_tot)
-            # Coordinator MPI calls include waits and overlap worker computation.
-            avg_comm = sum(t_comm) / len(t_comm)
-            avg_pack = sum(t_pack) / len(t_pack)
-            avg_comp = sum(t_comp) / len(t_comp)
-            mp = round((w_px * h_px) / 1e6, 2)
-            workers = 1 if mode == "seq" else (np_val - 1)
-
+def run_benchmark_suite(hosts=None):
+    TermUI.banner("2. Pregătire imagini")
+    for label, w, h in RESOLUTIONS:
+        generate_ppm_image(os.path.join(IMG_DIR, f"sample_{label}.ppm"), w, h)
+    jobs = build_jobs()
+    total_runs = len(jobs) * REPETITIONS
+    TermUI.banner(f"3. Măsurători: {len(jobs)} configurații × {REPETITIONS} repetări")
+    aggregated, baselines = [], {}
+    sample_outputs = {"input": os.path.join(IMG_DIR, "sample_1.5MP.ppm")}
+    started = time.time()
+    with tempfile.TemporaryDirectory(prefix="mpi-check-") as scratch, \
+            open(RAW_CSV_FILE, "w", newline="") as raw_file, \
+            open(CSV_FILE, "w", newline="") as avg_file:
+        raw_writer = csv.DictWriter(raw_file, fieldnames=[
+            "res_label", "repetition", "op", "mode", "width", "height", "np",
+            "total", "comm", "pack", "comp"], lineterminator="\n")
+        raw_writer.writeheader()
+        avg_writer = None
+        for index, (label, op, mode, count) in enumerate(jobs):
+            image = os.path.join(IMG_DIR, f"sample_{label}.ppm")
+            reference = os.path.join(scratch, f"{label}_{op.replace(',', '_')}.ppm")
+            candidate = os.path.join(scratch, "candidate.ppm")
+            runs = []
+            for repetition in range(REPETITIONS):
+                # Check the first run of every configuration outside timed intervals.
+                output = (reference if mode == "seq" else candidate) if repetition == 0 else "NONE"
+                run = run_mpi_job(count, image, output, mode, op, hosts)
+                runs.append(run)
+                raw_writer.writerow({"res_label": label, "repetition": repetition + 1, **run})
+                raw_file.flush()
+                if repetition == 0:
+                    different, maximum = (0, 0) if mode == "seq" else compare_pixels(reference, candidate)
+                    if label == "1.5MP" and mode == "seq":
+                        demo = os.path.join(IMG_DIR, f"out_{op.replace(',', '_')}.ppm")
+                        shutil.copyfile(reference, demo)
+                        sample_outputs[op] = demo
+                TermUI.progress(index * REPETITIONS + repetition + 1, total_runs, started,
+                                prefix=f"{label}|{op}|{mode}|np={count}")
+            key = (label, op)
             if mode == "seq":
-                seq_map[(res_label, op)] = avg_tot
-                avg_comm = 0.0
-                avg_pack = 0.0
-                speedup, eff = 1.0, 1.0
-            else:
-                base = seq_map.get((res_label, op), avg_tot)
-                speedup = base / avg_tot if avg_tot > 0 else 1.0
-                eff = speedup / workers if workers > 0 else 0.0
-
-            last_str = f"{avg_tot:.3f}s (pack={avg_pack:.4f}s, {speedup:.2f}x)"
-            TermUI.progress(cur, total_runs, t0, prefix="Finalizat", stat=last_str)
-
-            row = {
-                "res_label": res_label, "width": w_px, "height": h_px, "megapixels": mp,
-                "op": op, "mode": mode, "np": np_val, "workers": workers,
-                "avg_total_s": avg_tot, "avg_comm_s": avg_comm, "avg_pack_s": avg_pack,
-                "avg_comp_s": avg_comp, "speedup": speedup, "efficiency": eff
-            }
+                baselines[key] = statistics.mean(r["total"] for r in runs)
+            row = summarize_runs(label, runs, baselines[key])
+            row.update(different_pixels=different, max_channel_difference=maximum)
             aggregated.append(row)
-            writer.writerow([res_label, w_px, h_px, mp, op, mode, np_val, workers,
-                             f"{avg_tot:.5f}", f"{avg_comm:.5f}", f"{avg_pack:.5f}", f"{avg_comp:.5f}",
-                             f"{speedup:.3f}", f"{eff:.3f}"])
-            f.flush()
+            if avg_writer is None:
+                avg_writer = csv.DictWriter(avg_file, fieldnames=list(row), lineterminator="\n")
+                avg_writer.writeheader()
+            avg_writer.writerow(row)
+            avg_file.flush()
+    print(f"\nFinalizat în {time.time() - started:.1f}s. Măsurători brute în {RAW_CSV_FILE}.")
+    return aggregated, RESOLUTIONS[-1][0], COMPARISON_NP, sample_outputs
 
-    print(f"\n\n{TermUI.GREEN}✔ Finalizat în {time.time()-t0:.1f}s! Salvat -> {CSV_FILE}{TermUI.RESET}")
-    return aggregated, max_label, mid_np, sample_outputs
 
 def figure_to_markdown(fig, filename, alt_text):
     os.makedirs(REPORT_IMG_DIR, exist_ok=True)
     path = os.path.join(REPORT_IMG_DIR, filename)
     fig.savefig(path, format="png", dpi=140, bbox_inches="tight")
     plt.close(fig)
-    return f"![{alt_text}]({path})\n"
+    link = os.path.relpath(path, os.path.dirname(REPORT_FILE) or ".")
+    return f"![{alt_text}]({link})\n"
 
 def render_result_tables(results, res_label):
     tables = [
         f"### Rezultate măsurate pentru rezoluția `{res_label}`\n\n",
         "Timpii sunt exprimați în milisecunde. `np` include coordonatorul; "
         "modurile paralele folosesc `np - 1` workeri. "
-        "Cel mai mic timp total din fiecare tabel este marcat cu bold.\n\n",
+        "Total arată media ± abaterea standard. Cel mai mic timp mediu din fiecare tabel este marcat cu bold.\n\n",
     ]
-    for op in ["grayscale", "blur", "rotate90", "grayscale,blur,flip"]:
+    for op in OPS:
         rows = [r for r in results if r["res_label"] == res_label and r["op"] == op]
         if not rows:
             continue
@@ -282,7 +278,7 @@ def render_result_tables(results, res_label):
             "| :--- | ---: | ---: | ---: | ---: | ---: | ---: |\n",
         ])
         for r in rows:
-            total = f"{r['avg_total_s'] * 1000:.1f}"
+            total = f"{r['avg_total_s'] * 1000:.1f} ± {r['std_total_s'] * 1000:.1f}"
             if r["avg_total_s"] == best_total:
                 total = f"**{total}**"
             tables.append(
@@ -304,24 +300,15 @@ def render_result_tables(results, res_label):
 def generate_detailed_report(results, max_res_label, mid_np, hosts, sample_outputs):
     TermUI.banner(f"4. Generare Raport în {REPORT_FILE}")
     if not HAS_MATPLOTLIB:
-        print(f"{TermUI.RED}matplotlib necesar. pip install matplotlib{TermUI.RESET}")
-        return
-
-    ops = ["grayscale", "blur", "rotate90", "grayscale,blur,flip"]
-    op_titles = {
-        "grayscale": "Cat 1: Grayscale (In-Place)",
-        "blur": "Cat 2: Box Blur 9x9 (Neighborhood)",
-        "rotate90": "Cat 3: Rotate 90° CW (Move/Dimensions)",
-        "grayscale,blur,flip": "Full Pipeline (Gray -> Blur -> Flip)"
-    }
+        raise RuntimeError("Generarea raportului necesită matplotlib.")
 
     # Figura 0: Verificare Vizuală cu interpolare bilineară activată
     fig0, axes0 = plt.subplots(2, 3, figsize=(14, 8))
-    fig0.suptitle("Verificare Vizuală: Imagine Inițială vs. Rezultate Procesate MPI", fontsize=13, fontweight="bold")
+    fig0.suptitle("Imagine inițială și rezultate secvențiale de referință", fontsize=13, fontweight="bold")
     vis = [
         ("input", "1. Imagine Inițială"),
         ("grayscale", "2. Grayscale (In-Place)"),
-        ("blur", "3. Box Blur 9x9 (Fără cusături)"),
+        ("blur", "3. Box Blur 9x9"),
         ("rotate90", "4. Rotate 90° CW"),
         ("grayscale,blur,flip", "5. Pipeline (Gray->Blur->Flip)")
     ]
@@ -343,159 +330,163 @@ def generate_detailed_report(results, max_res_label, mid_np, hosts, sample_outpu
     fig0.tight_layout(rect=[0, 0.03, 1, 0.94])
     figure0 = figure_to_markdown(fig0, "visual_check.png", "Verificarea vizuală a operațiilor")
 
-    # Figura 1: Timp vs Procese
-    fig1, axes1 = plt.subplots(2, 2, figsize=(13, 8))
-    fig1.suptitle(f"Timpul de Execuție vs. Numărul de Procese MPI (Imagine {max_res_label})", fontsize=13, fontweight="bold")
-    for idx, op in enumerate(ops):
-        ax = axes1[idx // 2][idx % 2]
-        sub = [r for r in results if r["res_label"] == max_res_label and r["op"] == op]
-        seq = next((r for r in sub if r["mode"] == "seq"), None)
-        par = sorted([r for r in sub if r["mode"] == "static_1d"], key=lambda x: x["np"])
-        if seq:
-            ax.axhline(seq["avg_total_s"], color="red", linestyle="--", label="Secvențial (1 proc)")
-        if par:
-            ax.plot([p["np"] for p in par], [p["avg_total_s"] for p in par], marker="o", linewidth=2, color="#1f77b4", label="Paralel (static_1d)")
-        ax.set_title(op_titles[op], fontweight="bold", fontsize=10)
-        ax.set_xlabel("Număr Procese MPI (np)")
-        ax.set_ylabel("Timp Total (secunde)")
-        ax.grid(True, linestyle=":", alpha=0.6)
-        ax.legend(fontsize=8)
-    fig1.tight_layout(rect=[0, 0.03, 1, 0.94])
-    figure1 = figure_to_markdown(fig1, "execution_time.png", "Timpul de execuție în funcție de numărul de procese")
-
-    # Figura 2: Speedup
-    fig2, axes2 = plt.subplots(2, 2, figsize=(13, 8))
-    fig2.suptitle(f"Speedup Paralel (T_seq / T_par) vs. Număr Procese Worker ({max_res_label})", fontsize=13, fontweight="bold")
-    for idx, op in enumerate(ops):
-        ax = axes2[idx // 2][idx % 2]
-        sub = [r for r in results if r["res_label"] == max_res_label and r["op"] == op]
-        par = sorted([r for r in sub if r["mode"] == "static_1d"], key=lambda x: x["workers"])
-        if par:
-            workers_list = [p["workers"] for p in par]
-            ax.plot(workers_list, [p["speedup"] for p in par], marker="s", linewidth=2, color="#2ca02c", label="Speedup Real")
-            ax.plot(workers_list, workers_list, linestyle=":", color="gray", label="Speedup Ideal Liniar")
-        ax.axhline(1.0, color="red", linestyle="--", label="Prag Secvențial (1.0x)")
-        ax.set_title(op_titles[op], fontweight="bold", fontsize=10)
-        ax.set_xlabel("Număr Procese Worker (np - 1)")
-        ax.set_ylabel("Speedup (x)")
-        ax.grid(True, linestyle=":", alpha=0.6)
-        ax.legend(fontsize=8)
-    fig2.tight_layout(rect=[0, 0.03, 1, 0.94])
-    figure2 = figure_to_markdown(fig2, "speedup.png", "Speedup în funcție de numărul de workeri")
-
-    # Figura 3: Scalabilitate cu Rezoluția
-    fig3, axes3 = plt.subplots(1, 3, figsize=(14, 4.5))
-    fig3.suptitle(f"Scalabilitate cu Rezoluția Imaginii (Secvențial vs. Paralel np={mid_np})", fontsize=13, fontweight="bold")
-    for idx, op in enumerate(["grayscale", "blur", "grayscale,blur,flip"]):
-        ax = axes3[idx]
-        sub_seq = sorted([r for r in results if r["op"] == op and r["mode"] == "seq"], key=lambda x: x["megapixels"])
-        sub_par = sorted([r for r in results if r["op"] == op and r["mode"] == "static_1d" and r["np"] == mid_np], key=lambda x: x["megapixels"])
-        if sub_seq:
-            ax.plot([r["megapixels"] for r in sub_seq], [r["avg_total_s"] for r in sub_seq], marker="o", linestyle="--", color="red", label="Secvențial")
-        if sub_par:
-            ax.plot([r["megapixels"] for r in sub_par], [r["avg_total_s"] for r in sub_par], marker="s", color="#1f77b4", label=f"Paralel (np={mid_np})")
-        ax.set_title(op_titles[op], fontweight="bold", fontsize=10)
-        ax.set_xlabel("Rezoluție (Megapixeli)")
-        ax.set_ylabel("Timp (s)")
-        ax.grid(True, linestyle=":", alpha=0.6)
-        ax.legend(fontsize=8)
-    fig3.tight_layout(rect=[0, 0.03, 1, 0.92])
-    figure3 = figure_to_markdown(fig3, "resolution_scaling.png", "Scalabilitatea cu rezoluția imaginii")
-
-    # Figura 4: Împărțire Slicing (cu Pack/Unpack evidențiat separat)
-    fig4, (ax4a, ax4b) = plt.subplots(1, 2, figsize=(13, 5))
-    fig4.suptitle(f"Analiza Strategiilor de Divizare și Load-Balancing (np={mid_np}, {max_res_label})", fontsize=13, fontweight="bold")
-    
-    modes_test = ["static_1d", "static_2d", "dynamic_1d"]
-    comp_blur, pack_blur, comm_blur = [], [], []
-    for m in modes_test:
-        r = next((x for x in results if x["res_label"] == max_res_label and x["op"] == "blur" and x["mode"] == m and x["np"] == mid_np), None)
-        comp_blur.append(r["avg_comp_s"] if r else 0)
-        pack_blur.append(r["avg_pack_s"] if r else 0)
-        comm_blur.append(r["avg_comm_s"] if r else 0)
-
-    positions = np.arange(len(modes_test))
-    bar_width = 0.25
-    ax4a.bar(positions - bar_width, comp_blur, width=bar_width, label="Calcul CPU maxim pe worker", color="#2A6F97")
-    ax4a.bar(positions, pack_blur, width=bar_width, label="Pack / Unpack cu alocare", color="#E09F3E")
-    ax4a.bar(positions + bar_width, comm_blur, width=bar_width, label="Apeluri MPI cu așteptare", color="#9E2A2B")
-    ax4a.set_xticks(range(len(modes_test)))
-    ax4a.set_xticklabels(modes_test)
-    ax4a.set_title("Box Blur (Calcul Intensiv per Pixel)", fontweight="bold", fontsize=10)
-    ax4a.set_ylabel("Timp (secunde)")
-    ax4a.grid(True, axis="y", linestyle=":", alpha=0.6)
-    ax4a.legend(fontsize=8)
-
-    comp_pipe, pack_pipe, comm_pipe = [], [], []
-    for m in modes_test:
-        r = next((x for x in results if x["res_label"] == max_res_label and x["op"] == "grayscale,blur,flip" and x["mode"] == m and x["np"] == mid_np), None)
-        comp_pipe.append(r["avg_comp_s"] if r else 0)
-        pack_pipe.append(r["avg_pack_s"] if r else 0)
-        comm_pipe.append(r["avg_comm_s"] if r else 0)
-
-    positions = np.arange(len(modes_test))
-    bar_width = 0.25
-    ax4b.bar(positions - bar_width, comp_pipe, width=bar_width, label="Calcul CPU maxim pe worker", color="#2A6F97")
-    ax4b.bar(positions, pack_pipe, width=bar_width, label="Pack / Unpack cu alocare", color="#E09F3E")
-    ax4b.bar(positions + bar_width, comm_pipe, width=bar_width, label="Apeluri MPI cu așteptare", color="#9E2A2B")
-    ax4b.set_xticks(range(len(modes_test)))
-    ax4b.set_xticklabels(modes_test)
-    ax4b.set_title("Full Pipeline (Înlănțuire Filtre Grafice)", fontweight="bold", fontsize=10)
-    ax4b.set_ylabel("Timp (secunde)")
-    ax4b.grid(True, axis="y", linestyle=":", alpha=0.6)
-    ax4b.legend(fontsize=8)
-
-    fig4.tight_layout(rect=[0, 0.03, 1, 0.92])
-    figure4 = figure_to_markdown(fig4, "partition_strategies.png", "Comparația strategiilor de divizare")
-
-    result_tables = render_result_tables(results, max_res_label)
-
-    cluster_str = f"Cluster Multi-Node (`{hosts}`)" if hosts else "Single Machine (Local Multi-Core)"
     sections = [
-        (
-            "# Studiul Experimental al Prelucrării Paralele de Imagini în MPI\n\n"
-            f"**Mediu de execuție:** {cluster_str} | **Rezoluție principală:** `{max_res_label}` (~25 MB per imagine necomprimată)\n\n"
-            "Acest studiu evaluează performanța implementării paralele bazate pe șablonul **Coordonator-Workers** în MPI pentru procesarea matricilor de pixeli RGB (format necomprimat **PPM `P6`**)."
-        ),
-        (
-            "## 0. Verificarea Vizuală a Corectitudinii Operațiilor Grafice\n\n"
-            "Imaginea generată conține un marcaj roșu în stânga-sus, o grilă albă fină (1 px) și un cerc central galben. Aceste repere permit confirmarea corectitudinii algoritmilor de rotire, oglindire și asamblare a feliilor transmise prin MPI:"
-        ),
-        figure0,
-        (
-            "## 1. Variația Timpului de Execuție în Funcție de Numărul de Procese MPI (`np`)\n\n"
-            "**Concluzii experimentale:**\n\n"
-            "- **Operații cu calcul intensiv per pixel (`blur` și `pipeline`):** Timpul de execuție scade pronunțat pe măsură ce adăugăm workeri, evidențiind o scalabilitate puternică (Strong Scaling).\n"
-            "- **Operații simple (`grayscale`):** Complexitatea aritmetică redusă per pixel face ca timpul de transmitere a datelor prin memorie/rețea să limiteze câștigul paralel.\n"
-            "- **Saturația Hardware (Oversubscription):** Peste numărul de nuclee fizice/logice ale mașinii, panta se aplatizează sau începe să urce ușor din cauza context-switching-ului la nivel de OS."
-        ),
-        figure1,
-        (
-            "## 2. Analiza speedup-ului paralel\n\n"
-            "Speedup-ul se calculează cu formula `S_p = T_seq / T_par` și măsoară accelerarea față de execuția secvențială:\n\n"
-            "- Pentru filtrul **Box Blur**, volumul mare de operații aritmetice pe vecinătăți oferă un speedup solid pe arhitecturi multi-core.\n"
-            "- Pentru filtrul **Grayscale**, speedup-ul rămâne aproape de 1.0x-1.1x din cauza raportului mic între calcul și comunicație."
-        ),
-        figure2,
-        (
-            "## 3. Scalabilitatea cu rezoluția imaginii\n\n"
-            "Timpul de execuție crește liniar cu numărul de pixeli, conform complexității `O(N × M)`. Pe imagini mari (8MP), panta execuției paralele este semnificativ mai mică decât cea secvențială, confirmând eficiența algoritmului paralel pe volume mari de date."
-        ),
-        figure3,
-        (
-            "## 4. Comparația Strategiilor de Divizare (1D vs. 2D) și Load-Balancing (Static vs. Dinamic)\n\n"
-            f"Comparația folosește {mid_np - 1} workeri și un coordonator. Modul `static_2d` formează o grilă 2×2.\n\n"
-            "Barele sunt alăturate deoarece intervalele măsurate se suprapun. Timpul apelurilor MPI este măsurat pe coordonator și include așteptarea rezultatelor de la workeri. Calculul CPU reprezintă timpul cumulat maxim pe un worker. Suma acestor valori nu reprezintă timpul total.\n\n"
-            "Pack/unpack include alocarea bufferelor temporare. Feliile care ocupă întreaga lățime sunt transmise direct, deci pot avea timp de pack/unpack zero. Dalele 2D necesită copierea rândurilor în buffere contigue și reasamblarea rezultatului."
-        ),
-        figure4,
-        result_tables
+        "# Studiul experimental al prelucrării paralele de imagini în MPI",
+        "## Metodologie",
+        f"Mediu: `{hosts or 'local'}`. Fiecare configurație rulează de {REPETITIONS} ori. "
+        "Graficele timpului arată media și abaterea standard între rulări. "
+        "Speedup-ul folosește raportul mediilor `T_seq / T_par`, iar eficiența "
+        "este `speedup / număr_workeri`. Coordonatorul nu procesează pixeli în modurile paralele. "
+        "Aceste valori descriu rularea curentă și pot varia cu încărcarea sistemului.",
+        f"Toate cele patru operații folosesc aceleași configurații. Pe imaginea `{max_res_label}` "
+        f"testăm cele trei strategii cu `np` în {NP_LIST}. Pentru variația rezoluției fixăm "
+        f"`np={mid_np}` și folosim imaginile "
+        + ", ".join(f"`{label}`: {w}×{h}" for label, w, h in RESOLUTIONS) + ". "
+        "Configurațiile comune celor două experimente sunt măsurate o singură dată.",
+        "Timpul total exclude citirea și scrierea imaginilor, pornirea MPI, oprirea workerilor "
+        "și reducerea finală a timpilor. Prima repetare produce și o imagine pentru verificare; "
+        "scrierea și compararea pixelilor au loc în afara intervalelor măsurate. "
+        "Măsurătorile brute sunt în [benchmark_runs.csv](benchmark_runs.csv), "
+        "iar mediile și verificările în [benchmark_results.csv](benchmark_results.csv).",
+        "## 1. Cum influențează numărul de workeri timpul?",
+        f"Rezoluția este fixată la `{max_res_label}`. Fiecare curbă reprezintă o strategie; "
+        "linia întreruptă arată referința secvențială. Speedup peste 1 indică un timp mediu "
+        "mai mic decât cel secvențial. Eficiența de 100% este reperul ideal per worker.",
     ]
+    grid_labels = []
+    for count in NP_LIST:
+        workers = count - 1
+        cols = max(i for i in range(1, int(workers ** 0.5) + 1) if workers % i == 0)
+        grid_labels.append(f"`np={count}` → {workers // cols}×{cols}")
+    sections.append("Grilele `static_2d`, rânduri × coloane: " + "; ".join(grid_labels) +
+                    ". O singură coloană înseamnă felii pe întreaga lățime a rezultatului.")
 
+    colors = dict(zip(MODES, ["#1f77b4", "#e68613", "#2ca02c"]))
+    scaling = [r for r in results if r["res_label"] == max_res_label]
+    for metric, filename, title, ylabel in [
+        ("avg_total_s", "execution_time.png", "Timp total", "Timp total (ms)"),
+        ("speedup", "speedup.png", "Speedup", "Speedup (×)"),
+        ("efficiency", "efficiency.png", "Eficiență", "Eficiență (%)"),
+    ]:
+        fig, axes = plt.subplots(2, 2, figsize=(13, 8))
+        fig.suptitle(f"{title}, rezoluție {max_res_label}")
+        for op, ax in zip(OPS, axes.flat):
+            rows = [r for r in scaling if r["op"] == op]
+            seq = next(r for r in rows if r["mode"] == "seq")
+            for mode in MODES:
+                curve = sorted([r for r in rows if r["mode"] == mode], key=lambda r: r["np"])
+                x = [r["workers"] for r in curve]
+                multiplier = 1000 if metric == "avg_total_s" else 100 if metric == "efficiency" else 1
+                y = [r[metric] * multiplier for r in curve]
+                if metric == "avg_total_s":
+                    ax.errorbar(x, y, yerr=[r["std_total_s"] * 1000 for r in curve],
+                                marker="o", capsize=3, label=mode, color=colors[mode])
+                else:
+                    ax.plot(x, y, marker="o", label=mode, color=colors[mode])
+            if metric == "avg_total_s":
+                ax.axhline(seq[metric] * 1000, linestyle="--", color="red", label="seq")
+                ax.axhspan(max(0, seq[metric] - seq["std_total_s"]) * 1000,
+                           (seq[metric] + seq["std_total_s"]) * 1000, color="red", alpha=0.08)
+            else:
+                ax.axhline(1 if metric == "speedup" else 100, linestyle="--", color="gray")
+                if metric == "speedup":
+                    x = [n - 1 for n in NP_LIST]
+                    ax.plot(x, x, linestyle=":", color="gray", label="Ideal per worker")
+            ax.set(title=op, xlabel="Număr de workeri", ylabel=ylabel)
+            ax.set_xticks([n - 1 for n in NP_LIST])
+            ax.set_ylim(bottom=0)
+            ax.grid(True, alpha=0.3)
+            ax.legend(fontsize=8)
+        fig.tight_layout(rect=[0, 0, 1, 0.95])
+        sections.append(figure_to_markdown(fig, filename, title))
+    for op in OPS:
+        rows = [r for r in scaling if r["op"] == op]
+        best = min(rows, key=lambda r: r["avg_total_s"])
+        sections.append(
+            f"Pentru `{op}`, cel mai mic timp mediu măsurat este {best['avg_total_s'] * 1000:.1f} ms "
+            f"cu `{best['mode']}`, `np={best['np']}`. "
+            f"Speedup-ul acestei configurații este {best['speedup']:.2f}×."
+        )
+    sections.extend([
+        "## 2. De la ce dimensiune merită paralelizarea?",
+        f"Fixăm `np={mid_np}` pentru toate strategiile paralele și variem numărul de pixeli. "
+        "Axa dimensiunii este logaritmică. Pragurile de mai jos sunt cele mai mici dimensiuni "
+        "testate cu speedup peste 1, nu praguri exacte sau garanții pentru toate imaginile mai mari.",
+    ])
+    fig, axes = plt.subplots(2, 2, figsize=(13, 8))
+    fig.suptitle(f"Timpul în funcție de dimensiunea imaginii, np={mid_np}")
+    for op, ax in zip(OPS, axes.flat):
+        for mode in ["seq"] + MODES:
+            curve = sorted([r for r in results if r["op"] == op and r["mode"] == mode
+                            and (mode == "seq" or r["np"] == mid_np)], key=lambda r: r["megapixels"])
+            ax.errorbar([r["megapixels"] for r in curve], [r["avg_total_s"] * 1000 for r in curve],
+                        yerr=[r["std_total_s"] * 1000 for r in curve], marker="o", capsize=3,
+                        label=mode, color=colors.get(mode, "red"))
+            if mode != "seq":
+                wins = [r for r in curve if r["speedup"] > 1]
+                finding = (f"primul câștig la `{wins[0]['res_label']}`, {wins[0]['speedup']:.2f}×"
+                           if wins else "niciun câștig la dimensiunile testate")
+                sections.append(f"- `{op}`, `{mode}`: {finding}.")
+        ax.set(title=op, xlabel="Dimensiune (megapixeli)", ylabel="Timp total (ms)", xscale="log")
+        ax.set_ylim(bottom=0)
+        ax.grid(True, alpha=0.3)
+        ax.legend(fontsize=8)
+    fig.tight_layout(rect=[0, 0, 1, 0.95])
+    # Keep list entries together with normal Markdown list spacing.
+    sections.append(figure_to_markdown(fig, "resolution_scaling.png", "Variația cu dimensiunea imaginii"))
+
+    sections.extend([
+        "## 3. Ce cost are fiecare strategie?",
+        f"Comparăm toate operațiile la `{max_res_label}` și `np={mid_np}`. "
+        "Barele sunt alăturate deoarece timpul apelurilor MPI include așteptarea "
+        "workerilor și se suprapune cu timpul lor de calcul. Pack include și alocarea "
+        "bufferelor temporare. Feliile contigue pot avea timp de pack/unpack zero.",
+    ])
+    fig, axes = plt.subplots(2, 2, figsize=(14, 9))
+    metrics = [("avg_total_s", "Total"), ("avg_comp_s", "Calcul"),
+               ("avg_pack_s", "Pack"), ("avg_comm_s", "MPI cu așteptare")]
+    for op, ax in zip(OPS, axes.flat):
+        rows = [next(r for r in scaling if r["op"] == op and r["mode"] == mode
+                     and r["np"] == mid_np) for mode in MODES]
+        x = np.arange(len(MODES))
+        for index, (metric, label) in enumerate(metrics):
+            ax.bar(x + (index - 1.5) * 0.2, [r[metric] * 1000 for r in rows], width=0.2, label=label)
+        ax.set_xticks(x, MODES)
+        ax.set(title=op, ylabel="Timp (ms)")
+        ax.grid(True, axis="y", alpha=0.3)
+        ax.legend(fontsize=8)
+        best = min(rows, key=lambda r: r["avg_total_s"])
+        sections.append(f"Pentru `{op}`, la `np={mid_np}`, strategia cu timpul mediu minim "
+                        f"este `{best['mode']}`, {best['avg_total_s'] * 1000:.1f} ms.")
+    fig.tight_layout()
+    sections.append(figure_to_markdown(fig, "partition_strategies.png", "Costurile strategiilor"))
+
+    checked = [r for r in results if r["mode"] != "seq"]
+    failures = [r for r in checked if r["different_pixels"] or r["max_channel_difference"]]
+    sections.extend([
+        "## 4. Rezultatul paralel este corect?",
+        f"Am comparat toți pixelii primei repetări din fiecare dintre cele {len(checked)} "
+        f"configurații paralele cu rezultatul secvențial pentru aceeași imagine și operație. "
+        f"Configurații cu diferențe: {len(failures)}. "
+        f"Numărul maxim de pixeli diferiți este {max(r['different_pixels'] for r in checked)}, "
+        f"iar diferența maximă pe canal este {max(r['max_channel_difference'] for r in checked)}. "
+        "Verificarea include dimensiunile rezultatului; o nepotrivire de dimensiuni oprește suita.",
+        figure0,
+    ])
+    if failures:
+        sections.append("| Rezoluție | Operație | Mod | np | Pixeli diferiți | Diferență maximă |\n"
+                        "| :--- | :--- | :--- | ---: | ---: | ---: |\n" + "".join(
+                            f"| {r['res_label']} | {r['op']} | {r['mode']} | {r['np']} | "
+                            f"{r['different_pixels']} | {r['max_channel_difference']} |\n" for r in failures))
+    sections.append("## Date complete")
+    for label, _, _ in RESOLUTIONS:
+        sections.append(f"<details>\n<summary>Rezultate pentru {label}</summary>\n\n"
+                        + render_result_tables(results, label) + "\n</details>")
     with open(REPORT_FILE, "w", encoding="utf-8") as f:
         f.write("\n\n".join(section.rstrip() for section in sections) + "\n")
-
-    print(f"{TermUI.GREEN}✔ Raport final regenerat cu succes -> {REPORT_FILE}{TermUI.RESET}")
+    print(f"Raport generat în {REPORT_FILE}.")
+    if failures:
+        raise RuntimeError(f"{len(failures)} configurații au rezultate diferite de referință. Vezi raportul.")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

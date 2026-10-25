@@ -119,8 +119,29 @@ Programul necesită `mpicc` și `mpirun` și salvează rezultatele în
 conține tabele și imagini PNG din `benchmark_figures/`. Include raportul și
 acest director în commit pentru ca GitHub să afișeze graficele.
 
-Comparația strategiilor folosește cinci procese, un coordonator și patru
-workeri, pentru ca `static_2d` să formeze o grilă 2×2.
+Suita folosește aceeași matrice pentru grayscale, blur, rotate90 și pipeline:
+
+- Pe imaginea de 8MP, fiecare strategie paralelă rulează cu `np=2,3,4,5,6,8,9`.
+- La `np=5`, fiecare strategie rulează pe imagini de 256×256, 1600×900,
+  2400×1600 și 3840×2160 pixeli.
+- Fiecare pereche imagine/operație are o referință secvențială.
+
+Configurațiile comune sunt măsurate o singură dată. Cele 136 de configurații
+rulează de cinci ori fiecare, în total 680 de rulări MPI. `static_2d` folosește
+o grilă 2×2 la `np=5` și 4×2 la `np=9`.
+
+`benchmark_runs.csv` păstrează timpii fiecărei repetări în secunde.
+`benchmark_results.csv` conține mediile, abaterea standard a timpului total,
+speedup-ul, eficiența și rezultatele verificării pixelilor. Prima repetare
+a fiecărei configurații paralele este comparată integral cu referința
+secvențială. Scrierea imaginilor și compararea pixelilor nu intră în timpii
+măsurați. Raportul semnalează diferențele, iar programul încheie cu eroare
+dacă găsește rezultate incorecte.
+
+Raportul grupează graficele după întrebarea analizată. Tabelele complete
+sunt în acordeoane pentru fiecare rezoluție. Timpii sunt afișați în ms,
+ca medie ± abatere standard pentru timpul total. Concluziile provin din
+măsurători; nu presupun că o anumită strategie câștigă întotdeauna.
 
 În CSV, `avg_comm_s` este media timpului măsurat în apelurile MPI ale
 coordonatorului, inclusiv așteptarea workerilor. Acest timp se suprapune cu
@@ -128,3 +149,9 @@ calculul workerilor, deci coloanele de timp nu se adună pentru a obține
 timpul total. `avg_pack_s` include împachetarea, despachetarea și alocarea
 bufferelor temporare. Feliile care ocupă întreaga lățime se transmit direct
 și pot avea `avg_pack_s` egal cu zero.
+
+Verificările generatorului se rulează astfel:
+
+```bash
+uv run --with numpy --with matplotlib python -m unittest -v test_benchmark.py
+```
