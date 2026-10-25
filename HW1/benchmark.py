@@ -264,6 +264,43 @@ def figure_to_markdown(fig, filename, alt_text):
     plt.close(fig)
     return f"![{alt_text}]({path})\n"
 
+def render_result_tables(results, res_label):
+    tables = [
+        f"### Rezultate măsurate pentru rezoluția `{res_label}`\n\n",
+        "Timpii sunt exprimați în milisecunde. `np` include coordonatorul; "
+        "modurile paralele folosesc `np - 1` workeri. "
+        "Cel mai mic timp total din fiecare tabel este marcat cu bold.\n\n",
+    ]
+    for op in ["grayscale", "blur", "rotate90", "grayscale,blur,flip"]:
+        rows = [r for r in results if r["res_label"] == res_label and r["op"] == op]
+        if not rows:
+            continue
+        best_total = min(r["avg_total_s"] for r in rows)
+        tables.extend([
+            f"#### {op}\n\n",
+            "| Mod | np | Total (ms) | Calcul (ms) | Pack (ms) | MPI (ms) | Speedup |\n",
+            "| :--- | ---: | ---: | ---: | ---: | ---: | ---: |\n",
+        ])
+        for r in rows:
+            total = f"{r['avg_total_s'] * 1000:.1f}"
+            if r["avg_total_s"] == best_total:
+                total = f"**{total}**"
+            tables.append(
+                f"| {r['mode']} | {r['np']} | {total} | "
+                f"{r['avg_comp_s'] * 1000:.1f} | {r['avg_pack_s'] * 1000:.1f} | "
+                f"{r['avg_comm_s'] * 1000:.1f} | {r['speedup']:.2f}x |\n"
+            )
+        tables.append("\n")
+    tables.append(
+        "Calcul reprezintă timpul cumulat maxim de procesare pe un proces. "
+        "Pack include împachetarea, despachetarea și alocarea bufferelor temporare. "
+        "MPI include timpul petrecut de coordonator în apelurile MPI, inclusiv "
+        "așteptarea workerilor. Aceste intervale se suprapun și nu se adună "
+        "pentru a obține timpul total.\n"
+    )
+    return "".join(tables)
+
+
 def generate_detailed_report(results, max_res_label, mid_np, hosts, sample_outputs):
     TermUI.banner(f"4. Generare Raport în {REPORT_FILE}")
     if not HAS_MATPLOTLIB:
@@ -411,18 +448,7 @@ def generate_detailed_report(results, max_res_label, mid_np, hosts, sample_outpu
     fig4.tight_layout(rect=[0, 0.03, 1, 0.92])
     figure4 = figure_to_markdown(fig4, "partition_strategies.png", "Comparația strategiilor de divizare")
 
-    tbl = [
-        f"### Tabel Sintetic al Rezultatelor Măsurate (Rezoluție: `{max_res_label}`)\n\n",
-        "| Operație | Mod Paralelizare | Procese (`np`) | Workers | Timp Total (s) | Calcul CPU (s) | Pack/Unpack (s) | Apeluri MPI cu așteptare (s) | Speedup ($S_p$) |\n",
-        "| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |\n"
-    ]
-    for r in results:
-        if r["res_label"] == max_res_label:
-            tbl.append(
-                f"| `{r['op']}` | `{r['mode']}` | {r['np']} | {r['workers']} | "
-                f"**{r['avg_total_s']:.4f}s** | {r['avg_comp_s']:.4f}s | "
-                f"{r['avg_pack_s']:.4f}s | {r['avg_comm_s']:.4f}s | **{r['speedup']:.2f}x** |\n"
-            )
+    result_tables = render_result_tables(results, max_res_label)
 
     cluster_str = f"Cluster Multi-Node (`{hosts}`)" if hosts else "Single Machine (Local Multi-Core)"
     sections = [
@@ -432,38 +458,38 @@ def generate_detailed_report(results, max_res_label, mid_np, hosts, sample_outpu
             "Acest studiu evaluează performanța implementării paralele bazate pe șablonul **Coordonator-Workers** în MPI pentru procesarea matricilor de pixeli RGB (format necomprimat **PPM `P6`**)."
         ),
         (
-            "## 0. Verificarea Vizuală a Corectitudinii Operațiilor Grafice\n"
+            "## 0. Verificarea Vizuală a Corectitudinii Operațiilor Grafice\n\n"
             "Imaginea generată conține un marcaj roșu în stânga-sus, o grilă albă fină (1 px) și un cerc central galben. Aceste repere permit confirmarea corectitudinii algoritmilor de rotire, oglindire și asamblare a feliilor transmise prin MPI:"
         ),
         figure0,
         (
-            "## 1. Variația Timpului de Execuție în Funcție de Numărul de Procese MPI (`np`)\n"
-            "**Concluzii experimentale:**\n"
+            "## 1. Variația Timpului de Execuție în Funcție de Numărul de Procese MPI (`np`)\n\n"
+            "**Concluzii experimentale:**\n\n"
             "- **Operații cu calcul intensiv per pixel (`blur` și `pipeline`):** Timpul de execuție scade pronunțat pe măsură ce adăugăm workeri, evidențiind o scalabilitate puternică (Strong Scaling).\n"
             "- **Operații simple (`grayscale`):** Complexitatea aritmetică redusă per pixel face ca timpul de transmitere a datelor prin memorie/rețea să limiteze câștigul paralel.\n"
             "- **Saturația Hardware (Oversubscription):** Peste numărul de nuclee fizice/logice ale mașinii, panta se aplatizează sau începe să urce ușor din cauza context-switching-ului la nivel de OS."
         ),
         figure1,
         (
-            "## 2. Analiza Speedup-ului Paralel ($S_p = \\frac{T_{seq}}{T_{par}}$)\n"
-            "Speedup-ul măsoară accelerarea obținută comparativ cu execuția secvențială:\n"
+            "## 2. Analiza speedup-ului paralel\n\n"
+            "Speedup-ul se calculează cu formula `S_p = T_seq / T_par` și măsoară accelerarea față de execuția secvențială:\n\n"
             "- Pentru filtrul **Box Blur**, volumul mare de operații aritmetice pe vecinătăți oferă un speedup solid pe arhitecturi multi-core.\n"
             "- Pentru filtrul **Grayscale**, speedup-ul rămâne aproape de 1.0x-1.1x din cauza raportului mic între calcul și comunicație."
         ),
         figure2,
         (
-            "## 3. Scalabilitatea cu Rezoluția Imaginii ($N \\times M$ Megapixeli)\n"
-            "Timpul de execuție crește liniar cu numărul de pixeli, conform complexității $O(N \\cdot M)$. Pe imagini mari (8MP), panta execuției paralele este semnificativ mai mică decât cea secvențială, confirmând eficiența algoritmului paralel pe volume mari de date."
+            "## 3. Scalabilitatea cu rezoluția imaginii\n\n"
+            "Timpul de execuție crește liniar cu numărul de pixeli, conform complexității `O(N × M)`. Pe imagini mari (8MP), panta execuției paralele este semnificativ mai mică decât cea secvențială, confirmând eficiența algoritmului paralel pe volume mari de date."
         ),
         figure3,
         (
-            "## 4. Comparația Strategiilor de Divizare (1D vs. 2D) și Load-Balancing (Static vs. Dinamic)\n"
+            "## 4. Comparația Strategiilor de Divizare (1D vs. 2D) și Load-Balancing (Static vs. Dinamic)\n\n"
             f"Comparația folosește {mid_np - 1} workeri și un coordonator. Modul `static_2d` formează o grilă 2×2.\n\n"
             "Barele sunt alăturate deoarece intervalele măsurate se suprapun. Timpul apelurilor MPI este măsurat pe coordonator și include așteptarea rezultatelor de la workeri. Calculul CPU reprezintă timpul cumulat maxim pe un worker. Suma acestor valori nu reprezintă timpul total.\n\n"
             "Pack/unpack include alocarea bufferelor temporare. Feliile care ocupă întreaga lățime sunt transmise direct, deci pot avea timp de pack/unpack zero. Dalele 2D necesită copierea rândurilor în buffere contigue și reasamblarea rezultatului."
         ),
         figure4,
-        "".join(tbl)
+        result_tables
     ]
 
     with open(REPORT_FILE, "w", encoding="utf-8") as f:
