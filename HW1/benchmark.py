@@ -436,30 +436,54 @@ def generate_detailed_report(results, max_res_label, mid_np, hosts, sample_outpu
     sections.append(figure_to_markdown(fig, "resolution_scaling.png", "Variația cu dimensiunea imaginii"))
 
     sections.extend([
-        "## 3. Ce cost are fiecare strategie?",
+        "## 3. Cum se compară timpii coordonatorului și workerilor?",
         f"Comparăm toate operațiile la `{max_res_label}` și `np={mid_np}`. "
-        "Barele sunt alăturate deoarece timpul apelurilor MPI include așteptarea "
-        "workerilor și se suprapune cu timpul lor de calcul. Pack include și alocarea "
-        "bufferelor temporare. Feliile contigue pot avea timp de pack/unpack zero.",
+        "Fiecare strategie are două coloane, C pentru coordonator și W pentru worker. "
+        "Coloana C împarte timpul total în pack/unpack, alte operații locale și "
+        "comunicație și așteptare MPI. Pack/unpack include alocările bufferelor temporare. "
+        "Alte operații locale reprezintă restul calculat ca `total - MPI - pack/unpack`; "
+        "include pregătirea și planificarea taskurilor, administrarea memoriei din afara "
+        "pack/unpack și costul instrumentării. Transmiterea și colectarea prin apeluri MPI "
+        "intră în segmentul de comunicație și așteptare MPI, care nu reprezintă exclusiv "
+        "timp inactiv. Coloana W arată media maximului "
+        "timpului cumulat de calcul pe un worker, pentru fiecare rulare. "
+        "Nu este suma timpilor tuturor workerilor și nu include așteptarea sau transferurile lor. "
+        "Coloanele C și W se suprapun în timp și nu se adună. "
+        "Împărțirea arată cât timp ocupă munca locală, dar nu dovedește singură "
+        "că mutarea pack/unpack ar reduce timpul total.",
     ])
     fig, axes = plt.subplots(2, 2, figsize=(14, 9))
-    metrics = [("avg_total_s", "Total"), ("avg_comp_s", "Calcul"),
-               ("avg_pack_s", "Pack"), ("avg_comm_s", "MPI cu așteptare")]
     for op, ax in zip(OPS, axes.flat):
         rows = [next(r for r in scaling if r["op"] == op and r["mode"] == mode
                      and r["np"] == mid_np) for mode in MODES]
         x = np.arange(len(MODES))
-        for index, (metric, label) in enumerate(metrics):
-            ax.bar(x + (index - 1.5) * 0.2, [r[metric] * 1000 for r in rows], width=0.2, label=label)
+        packing = np.array([r["avg_pack_s"] * 1000 for r in rows])
+        other = np.array([max(0.0, r["avg_total_s"] - r["avg_comm_s"] - r["avg_pack_s"]) * 1000
+                          for r in rows])
+        waiting = [r["avg_comm_s"] * 1000 for r in rows]
+        width = 0.34
+        ax.bar(x - width / 2, packing, width=width,
+               label="Coordonator: pack/unpack", color="#2A6F97")
+        ax.bar(x - width / 2, other, bottom=packing, width=width,
+               label="Coordonator: alte operații locale", color="#8DB6CD")
+        ax.bar(x - width / 2, waiting, bottom=packing + other, width=width,
+               label="Coordonator: comunicație și așteptare MPI", color="#E09F3E")
+        ax.bar(x + width / 2, [r["avg_comp_s"] * 1000 for r in rows], width=width,
+               label="Worker: calcul maxim", color="#59A14F")
+        ax.set_xticks([position + offset for position in x for offset in [-width / 2, width / 2]],
+                      ["C", "W"] * len(MODES), minor=True)
+        ax.tick_params(axis="x", which="major", pad=22, length=0)
+        ax.tick_params(axis="x", which="minor", length=0)
         ax.set_xticks(x, MODES)
         ax.set(title=op, ylabel="Timp (ms)")
         ax.grid(True, axis="y", alpha=0.3)
-        ax.legend(fontsize=8)
         best = min(rows, key=lambda r: r["avg_total_s"])
         sections.append(f"Pentru `{op}`, la `np={mid_np}`, strategia cu timpul mediu minim "
                         f"este `{best['mode']}`, {best['avg_total_s'] * 1000:.1f} ms.")
-    fig.tight_layout()
-    sections.append(figure_to_markdown(fig, "partition_strategies.png", "Costurile strategiilor"))
+    handles, labels = axes.flat[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="upper center", ncol=2, fontsize=9)
+    fig.tight_layout(rect=[0, 0, 1, 0.93])
+    sections.append(figure_to_markdown(fig, "partition_strategies.png", "Timpii coordonatorului și timpul de calcul al workerului"))
 
     checked = [r for r in results if r["mode"] != "seq"]
     failures = [r for r in checked if r["different_pixels"] or r["max_channel_difference"]]

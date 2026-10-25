@@ -155,3 +155,15 @@ Verificările generatorului se rulează astfel:
 ```bash
 uv run --with numpy --with matplotlib python -m unittest -v test_benchmark.py
 ```
+
+Graficul strategiilor are două coloane pentru fiecare strategie. Coloana C
+arată timpul coordonatorului în trei segmente: pack/unpack cu alocările
+asociate, alte operații locale și comunicație și așteptare MPI. Restul local
+se calculează ca `avg_total_s - avg_comm_s - avg_pack_s`; include pregătirea
+și planificarea taskurilor, administrarea memoriei din afara pack/unpack și
+costul instrumentării. Transmiterea și colectarea prin apeluri MPI intră în
+segmentul MPI. Cele trei segmente formează timpul total, în limita preciziei
+măsurătorilor.
+Coloana W arată media maximului timpului cumulat de calcul pe un worker
+din fiecare rulare. Nu include timpii de așteptare și transfer ai workerului.
+Coloanele C și W se suprapun în timp și nu se adună.

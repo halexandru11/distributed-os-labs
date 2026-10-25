@@ -58,9 +58,9 @@ Fixăm `np=5` pentru toate strategiile paralele și variem numărul de pixeli. A
 
 ![Variația cu dimensiunea imaginii](benchmark_figures/resolution_scaling.png)
 
-## 3. Ce cost are fiecare strategie?
+## 3. Cum se compară timpii coordonatorului și workerilor?
 
-Comparăm toate operațiile la `8MP` și `np=5`. Barele sunt alăturate deoarece timpul apelurilor MPI include așteptarea workerilor și se suprapune cu timpul lor de calcul. Pack include și alocarea bufferelor temporare. Feliile contigue pot avea timp de pack/unpack zero.
+Comparăm toate operațiile la `8MP` și `np=5`. Fiecare strategie are două coloane, C pentru coordonator și W pentru worker. Coloana C împarte timpul total în pack/unpack, alte operații locale și comunicație și așteptare MPI. Pack/unpack include alocările bufferelor temporare. Alte operații locale reprezintă restul calculat ca `total - MPI - pack/unpack`; include pregătirea și planificarea taskurilor, administrarea memoriei din afara pack/unpack și costul instrumentării. Transmiterea și colectarea prin apeluri MPI intră în segmentul de comunicație și așteptare MPI, care nu reprezintă exclusiv timp inactiv. Coloana W arată media maximului timpului cumulat de calcul pe un worker, pentru fiecare rulare. Nu este suma timpilor tuturor workerilor și nu include așteptarea sau transferurile lor. Coloanele C și W se suprapun în timp și nu se adună. Împărțirea arată cât timp ocupă munca locală, dar nu dovedește singură că mutarea pack/unpack ar reduce timpul total.
 
 Pentru `grayscale`, la `np=5`, strategia cu timpul mediu minim este `dynamic_1d`, 103.4 ms.
 
@@ -70,7 +70,7 @@ Pentru `rotate90`, la `np=5`, strategia cu timpul mediu minim este `dynamic_1d`,
 
 Pentru `grayscale,blur,flip`, la `np=5`, strategia cu timpul mediu minim este `dynamic_1d`, 952.3 ms.
 
-![Costurile strategiilor](benchmark_figures/partition_strategies.png)
+![Timpii coordonatorului și timpul de calcul al workerului](benchmark_figures/partition_strategies.png)
 
 ## 4. Rezultatul paralel este corect?
 
