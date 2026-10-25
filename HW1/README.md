@@ -118,3 +118,13 @@ Programul necesită `mpicc` și `mpirun` și salvează rezultatele în
 `benchmark_results.csv`. Raportul [experimental_study.md](experimental_study.md)
 conține tabele și imagini PNG din `benchmark_figures/`. Include raportul și
 acest director în commit pentru ca GitHub să afișeze graficele.
+
+Comparația strategiilor folosește cinci procese, un coordonator și patru
+workeri, pentru ca `static_2d` să formeze o grilă 2×2.
+
+În CSV, `avg_comm_s` este media timpului măsurat în apelurile MPI ale
+coordonatorului, inclusiv așteptarea workerilor. Acest timp se suprapune cu
+calculul workerilor, deci coloanele de timp nu se adună pentru a obține
+timpul total. `avg_pack_s` include împachetarea, despachetarea și alocarea
+bufferelor temporare. Feliile care ocupă întreaga lățime se transmit direct
+și pot avea `avg_pack_s` egal cu zero.

@@ -175,7 +175,8 @@ def run_benchmark_suite(hosts=None):
 
     max_label, max_w, max_h = resolutions[-1]
     max_img = os.path.join(IMG_DIR, f"sample_{max_label}.ppm")
-    mid_np = 4
+    # Four workers form a 2x2 grid in static_2d.
+    mid_np = 5
 
     jobs = []
     for op in ["grayscale", "blur", "rotate90", "grayscale,blur,flip"]:
@@ -221,6 +222,8 @@ def run_benchmark_suite(hosts=None):
                 cur += 1
 
             avg_tot = sum(t_tot) / len(t_tot)
+            # Coordinator MPI calls include waits and overlap worker computation.
+            avg_comm = sum(t_comm) / len(t_comm)
             avg_pack = sum(t_pack) / len(t_pack)
             avg_comp = sum(t_comp) / len(t_comp)
             mp = round((w_px * h_px) / 1e6, 2)
@@ -235,8 +238,6 @@ def run_benchmark_suite(hosts=None):
                 base = seq_map.get((res_label, op), avg_tot)
                 speedup = base / avg_tot if avg_tot > 0 else 1.0
                 eff = speedup / workers if workers > 0 else 0.0
-                # Pure communication overhead (excluding computation and pack/unpack)
-                avg_comm = max(0.0001, avg_tot - avg_comp - avg_pack)
 
             last_str = f"{avg_tot:.3f}s (pack={avg_pack:.4f}s, {speedup:.2f}x)"
             TermUI.progress(cur, total_runs, t0, prefix="Finalizat", stat=last_str)
@@ -376,11 +377,11 @@ def generate_detailed_report(results, max_res_label, mid_np, hosts, sample_outpu
         pack_blur.append(r["avg_pack_s"] if r else 0)
         comm_blur.append(r["avg_comm_s"] if r else 0)
 
-    b_pack_blur = np.array(comp_blur)
-    b_comm_blur = b_pack_blur + np.array(pack_blur)
-    ax4a.bar(range(len(modes_test)), comp_blur, label="Calcul CPU (Workers)", color="#2A6F97")
-    ax4a.bar(range(len(modes_test)), pack_blur, bottom=b_pack_blur, label="Pack / Unpack Submatrice", color="#E09F3E")
-    ax4a.bar(range(len(modes_test)), comm_blur, bottom=b_comm_blur, label="Comunicație MPI + Sincronizare", color="#9E2A2B")
+    positions = np.arange(len(modes_test))
+    bar_width = 0.25
+    ax4a.bar(positions - bar_width, comp_blur, width=bar_width, label="Calcul CPU maxim pe worker", color="#2A6F97")
+    ax4a.bar(positions, pack_blur, width=bar_width, label="Pack / Unpack cu alocare", color="#E09F3E")
+    ax4a.bar(positions + bar_width, comm_blur, width=bar_width, label="Apeluri MPI cu așteptare", color="#9E2A2B")
     ax4a.set_xticks(range(len(modes_test)))
     ax4a.set_xticklabels(modes_test)
     ax4a.set_title("Box Blur (Calcul Intensiv per Pixel)", fontweight="bold", fontsize=10)
@@ -395,11 +396,11 @@ def generate_detailed_report(results, max_res_label, mid_np, hosts, sample_outpu
         pack_pipe.append(r["avg_pack_s"] if r else 0)
         comm_pipe.append(r["avg_comm_s"] if r else 0)
 
-    b_pack_pipe = np.array(comp_pipe)
-    b_comm_pipe = b_pack_pipe + np.array(pack_pipe)
-    ax4b.bar(range(len(modes_test)), comp_pipe, label="Calcul CPU (Workers)", color="#2A6F97")
-    ax4b.bar(range(len(modes_test)), pack_pipe, bottom=b_pack_pipe, label="Pack / Unpack Submatrice", color="#E09F3E")
-    ax4b.bar(range(len(modes_test)), comm_pipe, bottom=b_comm_pipe, label="Comunicație MPI + Sincronizare", color="#9E2A2B")
+    positions = np.arange(len(modes_test))
+    bar_width = 0.25
+    ax4b.bar(positions - bar_width, comp_pipe, width=bar_width, label="Calcul CPU maxim pe worker", color="#2A6F97")
+    ax4b.bar(positions, pack_pipe, width=bar_width, label="Pack / Unpack cu alocare", color="#E09F3E")
+    ax4b.bar(positions + bar_width, comm_pipe, width=bar_width, label="Apeluri MPI cu așteptare", color="#9E2A2B")
     ax4b.set_xticks(range(len(modes_test)))
     ax4b.set_xticklabels(modes_test)
     ax4b.set_title("Full Pipeline (Înlănțuire Filtre Grafice)", fontweight="bold", fontsize=10)
@@ -412,7 +413,7 @@ def generate_detailed_report(results, max_res_label, mid_np, hosts, sample_outpu
 
     tbl = [
         f"### Tabel Sintetic al Rezultatelor Măsurate (Rezoluție: `{max_res_label}`)\n\n",
-        "| Operație | Mod Paralelizare | Procese (`np`) | Workers | Timp Total (s) | Calcul CPU (s) | Pack/Unpack (s) | Comunicație MPI (s) | Speedup ($S_p$) |\n",
+        "| Operație | Mod Paralelizare | Procese (`np`) | Workers | Timp Total (s) | Calcul CPU (s) | Pack/Unpack (s) | Apeluri MPI cu așteptare (s) | Speedup ($S_p$) |\n",
         "| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |\n"
     ]
     for r in results:
@@ -457,9 +458,9 @@ def generate_detailed_report(results, max_res_label, mid_np, hosts, sample_outpu
         figure3,
         (
             "## 4. Comparația Strategiilor de Divizare (1D vs. 2D) și Load-Balancing (Static vs. Dinamic)\n"
-            "- **Divizare 1D vs. 2D:** Divizarea 1D orizontală este structural superioară divizării 2D în dale, deoarece ordinea *row-major* din C permite citirea directă a memoriei fără overhead-ul de împachetare (`pack_submatrix`) vizibil în bara portocalie a modului `static_2d`.\n"
-            "- **Static vs. Dinamic:** Deși `static_1d` transmite mai puține mesaje, **`dynamic_1d` obține cel mai bun timp de execuție**. Împărțirea în *chunk*-uri mai mici aduce două avantaje majore: o localitate a memoriei cache (L2/L3) superioară și eliminarea timpilor morți cauzați de fluctuațiile de frecvență ale nucleelor CPU (straggler effect).\n"
-            "- **Comportament pe cluster:** Avantajul modului dinamic va fi și mai pronunțat la conectarea a două laptopuri cu procesoare diferite."
+            f"Comparația folosește {mid_np - 1} workeri și un coordonator. Modul `static_2d` formează o grilă 2×2.\n\n"
+            "Barele sunt alăturate deoarece intervalele măsurate se suprapun. Timpul apelurilor MPI este măsurat pe coordonator și include așteptarea rezultatelor de la workeri. Calculul CPU reprezintă timpul cumulat maxim pe un worker. Suma acestor valori nu reprezintă timpul total.\n\n"
+            "Pack/unpack include alocarea bufferelor temporare. Feliile care ocupă întreaga lățime sunt transmise direct, deci pot avea timp de pack/unpack zero. Dalele 2D necesită copierea rândurilor în buffere contigue și reasamblarea rezultatului."
         ),
         figure4,
         "".join(tbl)

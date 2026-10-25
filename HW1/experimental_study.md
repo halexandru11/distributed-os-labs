@@ -30,45 +30,47 @@ Timpul de execuție crește liniar cu numărul de pixeli, conform complexități
 ![Scalabilitatea cu rezoluția imaginii](benchmark_figures/resolution_scaling.png)
 
 ## 4. Comparația Strategiilor de Divizare (1D vs. 2D) și Load-Balancing (Static vs. Dinamic)
-- **Divizare 1D vs. 2D:** Divizarea 1D orizontală este structural superioară divizării 2D în dale, deoarece ordinea *row-major* din C permite citirea directă a memoriei fără overhead-ul de împachetare (`pack_submatrix`) vizibil în bara portocalie a modului `static_2d`.
-- **Static vs. Dinamic:** Deși `static_1d` transmite mai puține mesaje, **`dynamic_1d` obține cel mai bun timp de execuție**. Împărțirea în *chunk*-uri mai mici aduce două avantaje majore: o localitate a memoriei cache (L2/L3) superioară și eliminarea timpilor morți cauzați de fluctuațiile de frecvență ale nucleelor CPU (straggler effect).
-- **Comportament pe cluster:** Avantajul modului dinamic va fi și mai pronunțat la conectarea a două laptopuri cu procesoare diferite.
+Comparația folosește 4 workeri și un coordonator. Modul `static_2d` formează o grilă 2×2.
+
+Barele sunt alăturate deoarece intervalele măsurate se suprapun. Timpul apelurilor MPI este măsurat pe coordonator și include așteptarea rezultatelor de la workeri. Calculul CPU reprezintă timpul cumulat maxim pe un worker. Suma acestor valori nu reprezintă timpul total.
+
+Pack/unpack include alocarea bufferelor temporare. Feliile care ocupă întreaga lățime sunt transmise direct, deci pot avea timp de pack/unpack zero. Dalele 2D necesită copierea rândurilor în buffere contigue și reasamblarea rezultatului.
 
 ![Comparația strategiilor de divizare](benchmark_figures/partition_strategies.png)
 
 ### Tabel Sintetic al Rezultatelor Măsurate (Rezoluție: `8MP`)
 
-| Operație | Mod Paralelizare | Procese (`np`) | Workers | Timp Total (s) | Calcul CPU (s) | Pack/Unpack (s) | Comunicație MPI (s) | Speedup ($S_p$) |
+| Operație | Mod Paralelizare | Procese (`np`) | Workers | Timp Total (s) | Calcul CPU (s) | Pack/Unpack (s) | Apeluri MPI cu așteptare (s) | Speedup ($S_p$) |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| `grayscale` | `seq` | 1 | 1 | **0.0287s** | 0.0287s | 0.0000s | 0.0000s | **1.00x** |
-| `grayscale` | `static_1d` | 2 | 1 | **0.0484s** | 0.0282s | 0.0000s | 0.0203s | **0.59x** |
-| `grayscale` | `static_1d` | 3 | 2 | **0.0319s** | 0.0145s | 0.0000s | 0.0174s | **0.90x** |
-| `grayscale` | `static_1d` | 4 | 3 | **0.0258s** | 0.0104s | 0.0000s | 0.0155s | **1.11x** |
-| `grayscale` | `static_1d` | 5 | 4 | **0.0249s** | 0.0088s | 0.0000s | 0.0162s | **1.15x** |
-| `grayscale` | `static_1d` | 6 | 5 | **0.0235s** | 0.0070s | 0.0000s | 0.0165s | **1.22x** |
-| `grayscale` | `static_1d` | 8 | 7 | **0.0263s** | 0.0053s | 0.0000s | 0.0210s | **1.09x** |
-| `blur` | `seq` | 1 | 1 | **0.6391s** | 0.6391s | 0.0000s | 0.0000s | **1.00x** |
-| `blur` | `static_1d` | 2 | 1 | **0.6538s** | 0.6311s | 0.0000s | 0.0227s | **0.98x** |
-| `blur` | `static_1d` | 3 | 2 | **0.3374s** | 0.3195s | 0.0000s | 0.0178s | **1.89x** |
-| `blur` | `static_1d` | 4 | 3 | **0.2271s** | 0.2122s | 0.0000s | 0.0149s | **2.81x** |
-| `blur` | `static_1d` | 5 | 4 | **0.1803s** | 0.1646s | 0.0000s | 0.0158s | **3.54x** |
-| `blur` | `static_1d` | 6 | 5 | **0.1471s** | 0.1318s | 0.0000s | 0.0153s | **4.35x** |
-| `blur` | `static_1d` | 8 | 7 | **0.1144s** | 0.0984s | 0.0000s | 0.0160s | **5.59x** |
-| `rotate90` | `seq` | 1 | 1 | **0.0391s** | 0.0391s | 0.0000s | 0.0000s | **1.00x** |
-| `rotate90` | `static_1d` | 2 | 1 | **0.0593s** | 0.0379s | 0.0000s | 0.0215s | **0.66x** |
-| `rotate90` | `static_1d` | 3 | 2 | **0.0481s** | 0.0188s | 0.0117s | 0.0176s | **0.81x** |
-| `rotate90` | `static_1d` | 4 | 3 | **0.0369s** | 0.0125s | 0.0090s | 0.0154s | **1.06x** |
-| `rotate90` | `static_1d` | 5 | 4 | **0.0337s** | 0.0097s | 0.0081s | 0.0159s | **1.16x** |
-| `rotate90` | `static_1d` | 6 | 5 | **0.0319s** | 0.0075s | 0.0077s | 0.0167s | **1.22x** |
-| `rotate90` | `static_1d` | 8 | 7 | **0.0302s** | 0.0059s | 0.0050s | 0.0193s | **1.29x** |
-| `grayscale,blur,flip` | `seq` | 1 | 1 | **0.6837s** | 0.6837s | 0.0000s | 0.0000s | **1.00x** |
-| `grayscale,blur,flip` | `static_1d` | 2 | 1 | **0.7513s** | 0.6798s | 0.0000s | 0.0715s | **0.91x** |
-| `grayscale,blur,flip` | `static_1d` | 3 | 2 | **0.3969s** | 0.3467s | 0.0000s | 0.0502s | **1.72x** |
-| `grayscale,blur,flip` | `static_1d` | 4 | 3 | **0.2746s** | 0.2299s | 0.0000s | 0.0446s | **2.49x** |
-| `grayscale,blur,flip` | `static_1d` | 5 | 4 | **0.2225s** | 0.1782s | 0.0000s | 0.0442s | **3.07x** |
-| `grayscale,blur,flip` | `static_1d` | 6 | 5 | **0.1911s** | 0.1449s | 0.0000s | 0.0462s | **3.58x** |
-| `grayscale,blur,flip` | `static_1d` | 8 | 7 | **0.1560s** | 0.1055s | 0.0000s | 0.0505s | **4.38x** |
-| `blur` | `static_2d` | 4 | 3 | **0.2286s** | 0.2128s | 0.0000s | 0.0158s | **2.80x** |
-| `blur` | `dynamic_1d` | 4 | 3 | **0.2238s** | 0.2126s | 0.0000s | 0.0113s | **2.86x** |
-| `grayscale,blur,flip` | `static_2d` | 4 | 3 | **0.2742s** | 0.2302s | 0.0000s | 0.0440s | **2.49x** |
-| `grayscale,blur,flip` | `dynamic_1d` | 4 | 3 | **0.2651s** | 0.2273s | 0.0000s | 0.0378s | **2.58x** |
+| `grayscale` | `seq` | 1 | 1 | **0.0453s** | 0.0453s | 0.0000s | 0.0000s | **1.00x** |
+| `grayscale` | `static_1d` | 2 | 1 | **0.0806s** | 0.0511s | 0.0000s | 0.0806s | **0.56x** |
+| `grayscale` | `static_1d` | 3 | 2 | **0.0833s** | 0.0484s | 0.0000s | 0.0833s | **0.54x** |
+| `grayscale` | `static_1d` | 4 | 3 | **0.1078s** | 0.0362s | 0.0000s | 0.1078s | **0.42x** |
+| `grayscale` | `static_1d` | 5 | 4 | **0.1216s** | 0.0858s | 0.0000s | 0.1216s | **0.37x** |
+| `grayscale` | `static_1d` | 6 | 5 | **0.2064s** | 0.0530s | 0.0000s | 0.2064s | **0.22x** |
+| `grayscale` | `static_1d` | 8 | 7 | **0.1353s** | 0.0381s | 0.0000s | 0.1353s | **0.34x** |
+| `blur` | `seq` | 1 | 1 | **0.8520s** | 0.8520s | 0.0000s | 0.0000s | **1.00x** |
+| `blur` | `static_1d` | 2 | 1 | **1.0613s** | 1.0204s | 0.0000s | 1.0613s | **0.80x** |
+| `blur` | `static_1d` | 3 | 2 | **0.8961s** | 0.8457s | 0.0000s | 0.8961s | **0.95x** |
+| `blur` | `static_1d` | 4 | 3 | **0.7741s** | 0.7029s | 0.0000s | 0.7741s | **1.10x** |
+| `blur` | `static_1d` | 5 | 4 | **0.8569s** | 0.8150s | 0.0000s | 0.8569s | **0.99x** |
+| `blur` | `static_1d` | 6 | 5 | **1.0537s** | 0.9867s | 0.0000s | 1.0537s | **0.81x** |
+| `blur` | `static_1d` | 8 | 7 | **0.9201s** | 0.7888s | 0.0000s | 0.9200s | **0.93x** |
+| `rotate90` | `seq` | 1 | 1 | **0.0999s** | 0.0999s | 0.0000s | 0.0000s | **1.00x** |
+| `rotate90` | `static_1d` | 2 | 1 | **0.1338s** | 0.0883s | 0.0000s | 0.1338s | **0.75x** |
+| `rotate90` | `static_1d` | 3 | 2 | **0.1609s** | 0.0800s | 0.0305s | 0.1285s | **0.62x** |
+| `rotate90` | `static_1d` | 4 | 3 | **0.1506s** | 0.0959s | 0.0238s | 0.1255s | **0.66x** |
+| `rotate90` | `static_1d` | 5 | 4 | **0.1687s** | 0.0945s | 0.0256s | 0.1422s | **0.59x** |
+| `rotate90` | `static_1d` | 6 | 5 | **0.1580s** | 0.1016s | 0.0144s | 0.1429s | **0.63x** |
+| `rotate90` | `static_1d` | 8 | 7 | **0.2152s** | 0.1551s | 0.0176s | 0.1971s | **0.46x** |
+| `grayscale,blur,flip` | `seq` | 1 | 1 | **1.2003s** | 1.2003s | 0.0000s | 0.0000s | **1.00x** |
+| `grayscale,blur,flip` | `static_1d` | 2 | 1 | **1.1126s** | 1.0158s | 0.0000s | 1.1126s | **1.08x** |
+| `grayscale,blur,flip` | `static_1d` | 3 | 2 | **1.0473s** | 0.9335s | 0.0000s | 1.0472s | **1.15x** |
+| `grayscale,blur,flip` | `static_1d` | 4 | 3 | **1.4404s** | 1.1654s | 0.0000s | 1.4403s | **0.83x** |
+| `grayscale,blur,flip` | `static_1d` | 5 | 4 | **1.2060s** | 0.9632s | 0.0000s | 1.2060s | **1.00x** |
+| `grayscale,blur,flip` | `static_1d` | 6 | 5 | **1.3704s** | 1.1360s | 0.0000s | 1.3703s | **0.88x** |
+| `grayscale,blur,flip` | `static_1d` | 8 | 7 | **1.3802s** | 1.0080s | 0.0000s | 1.3802s | **0.87x** |
+| `blur` | `static_2d` | 5 | 4 | **1.1267s** | 0.9893s | 0.0693s | 1.0565s | **0.76x** |
+| `blur` | `dynamic_1d` | 5 | 4 | **0.8657s** | 0.8253s | 0.0000s | 0.8656s | **0.98x** |
+| `grayscale,blur,flip` | `static_2d` | 5 | 4 | **1.6098s** | 1.2644s | 0.1783s | 1.4189s | **0.75x** |
+| `grayscale,blur,flip` | `dynamic_1d` | 5 | 4 | **1.0872s** | 0.8364s | 0.0000s | 1.0871s | **1.10x** |

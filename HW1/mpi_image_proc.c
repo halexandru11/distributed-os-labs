@@ -68,8 +68,8 @@ typedef struct {
  * All fields exclude image I/O, worker shutdown, and the final timing reduction. */
 typedef struct {
   double total;       /* Coordinator execution intervals across the pipeline. */
-  double transfer;    /* Pure blocking MPI_Send / MPI_Recv time on rank 0. */
-  double pack_unpack; /* Exact time spent in pack_submatrix & unpack_submatrix. */
+  double transfer;    /* Blocking MPI time on rank 0, including worker waits. */
+  double pack_unpack; /* Tile packing/unpacking, including scratch allocation. */
   double computation; /* Local pixel processing; take MPI_MAX at shutdown. */
 } ExecutionTiming;
 
