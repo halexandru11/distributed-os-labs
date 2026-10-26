@@ -377,6 +377,14 @@ def render_result_tables(results, res_label):
         tables.append("\n")
     return "".join(tables)
 
+def chart_operation_label(op):
+    operations = []
+    for operation in op.split(","):
+        name, _, size = operation.partition(":")
+        operations.append(f"blur {size or '9'}x{size or '9'}" if name == "blur" else operation)
+    return ",".join(operations)
+
+
 def generate_detailed_report(results, max_res_label, mid_np, hosts, sample_outputs):
     TermUI.banner(f"4. Generare Raport în {REPORT_FILE}")
     if not HAS_MATPLOTLIB:
@@ -389,7 +397,7 @@ def generate_detailed_report(results, max_res_label, mid_np, hosts, sample_outpu
         ("grayscale", "2. Grayscale (In-Place)"),
         ("blur", "3. Box Blur 9x9"),
         ("rotate90", "4. Rotate 90° CW"),
-        ("grayscale,blur,flip", "5. Pipeline (Gray->Blur->Flip)")
+        ("grayscale,blur,flip", "5. Pipeline (Gray->Blur 9x9->Flip)")
     ]
     for idx, (k, title) in enumerate(vis):
         ax = axes0[idx // 3][idx % 3]
@@ -404,7 +412,7 @@ def generate_detailed_report(results, max_res_label, mid_np, hosts, sample_outpu
     ch, cw = min(120, arr_in.shape[0]), min(120, arr_in.shape[1])
     zoom = np.concatenate([arr_in[:ch, :cw], np.full((ch, 6, 3), 255, dtype=np.uint8), arr_bl[:ch, :cw]], axis=1)
     ax_z.imshow(zoom, interpolation="bilinear")
-    ax_z.set_title("6. Zoom Detaliu (Stânga: Input | Dreapta: Blur)", fontsize=9, fontweight="bold")
+    ax_z.set_title("6. Zoom Detaliu (Stânga: Input | Dreapta: Blur 9x9)", fontsize=9, fontweight="bold")
     ax_z.axis("off")
     fig0.tight_layout(rect=[0, 0.03, 1, 0.94])
     figure0 = figure_to_markdown(fig0, "visual_check.png", "Verificarea vizuală a operațiilor")
@@ -453,7 +461,7 @@ def generate_detailed_report(results, max_res_label, mid_np, hosts, sample_outpu
                 if metric == "speedup":
                     x = [n - 1 for n in NP_LIST]
                     ax.plot(x, x, linestyle=":", color="gray", label="Ideal per worker")
-            ax.set(title=op, xlabel="Număr de workeri", ylabel=ylabel)
+            ax.set(title=chart_operation_label(op), xlabel="Număr de workeri", ylabel=ylabel)
             ax.set_xticks([n - 1 for n in NP_LIST])
             ax.set_ylim(bottom=0)
             ax.grid(True, alpha=0.3)
@@ -477,7 +485,7 @@ def generate_detailed_report(results, max_res_label, mid_np, hosts, sample_outpu
             color = colors.get(mode, "red")
             ax.plot(x, y, marker="o", label=mode, color=color)
             ax.fill_between(x, np.maximum(0, y - deviation), y + deviation, color=color, alpha=0.12, linewidth=0)
-        ax.set(title=op, xlabel="Dimensiune (megapixeli)", ylabel="Timp total (ms)", xscale="log")
+        ax.set(title=chart_operation_label(op), xlabel="Dimensiune (megapixeli)", ylabel="Timp total (ms)", xscale="log")
         ax.set_ylim(bottom=0)
         ax.grid(True, alpha=0.3)
         ax.legend(fontsize=8)
@@ -563,7 +571,7 @@ def generate_detailed_report(results, max_res_label, mid_np, hosts, sample_outpu
         ax.tick_params(axis="x", which="major", pad=18, length=0)
         ax.tick_params(axis="x", which="minor", length=2)
 
-        ax.set_title(op, fontsize=11, fontweight="bold")
+        ax.set_title(chart_operation_label(op), fontsize=11, fontweight="bold")
         ax.set_ylabel("Timp (ms)")
         ax.set_ylim(bottom=0)
         ax.grid(True, axis="y", alpha=0.3)
