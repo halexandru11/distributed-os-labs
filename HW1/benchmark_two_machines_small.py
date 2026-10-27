@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Benchmark four operations at 1.5MP, 4MP and 8MP on two machines."""
+"""Benchmark the grayscale,blur,flip pipeline on sample_64MP.ppm on two machines."""
 import argparse
 import csv
 import hashlib
@@ -15,10 +15,10 @@ import matplotlib.pyplot as plt
 
 ROOT = Path(__file__).resolve().parent
 OUTPUT_ROOT = ROOT / 'benchmark_two_machines'
-RESOLUTIONS = [('1.5MP', 1600, 900), ('4MP', 2400, 1600), ('8MP', 3840, 2160)]
+RESOLUTIONS = [('64MP', 10667, 6000)]
 RESOLUTION = RESOLUTIONS[0]
 OUT = OUTPUT_ROOT / RESOLUTION[0]
-OPS = ['grayscale', 'blur', 'rotate90', 'grayscale,blur,flip']
+OPS = ['grayscale,blur,flip']
 PROGRESS = None
 MODES = b.MODES
 REPS = 3
@@ -30,6 +30,13 @@ COLORS = ['#2878b5', '#e58b26', '#38945b']
 
 def image_path():
     return ROOT / 'test_images' / f'sample_{RESOLUTION[0]}.ppm'
+
+
+def load_selected_runs(path):
+    if not path.exists():
+        return []
+    records = [json.loads(line) for line in path.read_text().splitlines()]
+    return [record for record in records if record['op'] in OPS]
 
 
 def jobs():
@@ -118,13 +125,13 @@ def collect():
     metadata_path = OUT / 'metadata.json'
     if metadata_path.exists():
         previous_metadata = json.loads(metadata_path.read_text())
-        for field in ['image_sha256', 'source_sha256', 'repetitions', 'operations', 'binding', 'coordinator']:
+        for field in ['image_sha256', 'source_sha256', 'repetitions', 'binding', 'coordinator']:
             if previous_metadata.get(field) != metadata[field]:
                 raise RuntimeError(f'Cannot resume changed {field}; use a fresh output directory: {OUT}')
     else:
         metadata_path.write_text(json.dumps(metadata, indent=2))
     path = OUT / 'runs.jsonl'
-    previous = [json.loads(x) for x in path.read_text().splitlines()] if path.exists() else []
+    previous = load_selected_runs(path)
     validate_records(previous, complete=False)
     done = {(x['op'], x['mode'], x['hp'], x['victus'], x['repeat']) for x in previous}
     pending_jobs = jobs()
@@ -153,7 +160,7 @@ def collect():
                 PROGRESS.completed += 1
                 PROGRESS.show(f'{RESOLUTION[0]} {op} {mode} HP={h} V={v} rep={repeat + 1}, {metrics["total"]*1000:.3f} ms')
                 print(flush=True)
-    return [json.loads(x) for x in path.read_text().splitlines()]
+    return load_selected_runs(path)
 
 
 def figures_and_report(raw, time_limit=None, speed_limit=None):
@@ -188,12 +195,12 @@ def figures_and_report(raw, time_limit=None, speed_limit=None):
     report = [f'# Studiu pe două calculatoare, {RESOLUTION[0]}', '',
         f'Imaginea `test_images/sample_{RESOLUTION[0]}.ppm` are {RESOLUTION[1]}×{RESOLUTION[2]} pixeli. Rezultatele sunt separate de studiile anterioare.', '',
         '## Metodologie', '',
-        f'Am măsurat {len(rows)} de configurații, cu câte {REPS} repetări, în total {len(raw)} de rulări măsurate. Operațiile sunt grayscale, blur 9×9, rotate90 și pipeline-ul grayscale,blur,flip. Strategiile sunt static_1d, static_2d și dynamic_1d.', '',
+        f'Am măsurat {len(rows)} de configurații, cu câte {REPS} repetări, în total {len(raw)} de rulări măsurate. Măsurăm numai pipeline-ul grayscale,blur,flip, cu blur 9×9. Strategiile sunt static_1d, static_2d și dynamic_1d.', '',
         'HP-Laptop are un Intel Core i7-7500U, cu 2 nuclee și 4 fire hardware. Victus are un Intel Core i5-12500H și 16 fire hardware. Am folosit Open MPI 4.1.6, compilare `mpicc -O3 -Wall` și `--bind-to none`. Procesele rulează fără fixare pe nuclee. Coordonatorul este un proces suplimentar față de numărul de workeri.', '',
         'Rangul 0 rulează pe HP-Laptop pentru testele exclusiv pe HP-Laptop și pe Victus pentru celelalte teste. Graficul HP-Laptop include 1 proces secvențial, 2 procese cu un worker și 3 procese cu doi workeri. Rangurile 1 până la numărul de workeri HP-Laptop rulează pe HP-Laptop, iar workerii rămași rulează pe Victus. Limitele de 2 și 8 se referă la workeri, fără coordonator.', '',
         'Speedup = media timpului secvențial / media timpului paralel. Referința secvențială rulează pe HP-Laptop pentru testele exclusiv pe HP-Laptop și pe Victus pentru celelalte teste. Eficiența este speedup / numărul total de workeri. Pe calculatoare diferite, acest raport depinde de performanța referinței secvențiale.', '',
         'Timpii provin din instrumentarea C și exclud lansarea MPI, citirea imaginii, scrierea rezultatului și verificarea pixelilor. Prima repetare a fiecărei configurații salvează rezultatul pentru comparație integrală cu referința secvențială. Celelalte repetări folosesc ieșirea NONE. Timpii sunt afișați ca medie și abatere standard. Trei repetări oferă o verificare pilot, cu precizie limitată pentru operațiile scurte.', '',
-        'Toate graficele de timp folosesc aceeași limită verticală, inclusiv graficele strategiilor. Graficele de speedup folosesc o limită comună. Valorile extreme ridică limita verticală, astfel că unele curbe și bare sunt aproape de zero pe această scară. Tabelele păstrează valorile numerice. Datele brute includ timpii fiecărui worker, distribuția pe calculatoare și datele necesare eficienței. Suita măsoară aceleași configurații la 1.5MP, 4MP și 8MP. Datele pentru eficiență și variația cu rezoluția sunt în CSV-urile fiecărei rezoluții.', '']
+        'Toate graficele de timp folosesc aceeași limită verticală, inclusiv graficele strategiilor. Graficele de speedup folosesc o limită comună. Valorile extreme ridică limita verticală, astfel că unele curbe și bare sunt aproape de zero pe această scară. Tabelele păstrează valorile numerice. Datele brute includ timpii fiecărui worker, distribuția pe calculatoare și datele necesare eficienței. Această rulare măsoară numai imaginea de 64MP. CSV-urile păstrează eficiența și pot fi comparate cu rezultatele anterioare la alte rezoluții.', '']
     for op in OPS:
         slug = op.replace(',', '_')
         subset = [r for r in rows if r['op'] == op and r['mode'] != 'seq']
@@ -312,7 +319,7 @@ if __name__ == '__main__':
     parser.add_argument('--plot-only', action='store_true', help='Regenerate reports from saved measurements.')
     args = parser.parse_args()
     total = len(RESOLUTIONS) * len(jobs()) * REPS
-    completed = sum(len(path.read_text().splitlines()) for path in
+    completed = sum(len(load_selected_runs(path)) for path in
                     [OUTPUT_ROOT / r[0] / 'runs.jsonl' for r in RESOLUTIONS] if path.exists())
     PROGRESS = Progress(total, completed)
     print(f'{len(RESOLUTIONS)} resolutions, {len(OPS)} operations, {total} measured runs; {completed} saved.', flush=True)
@@ -320,7 +327,7 @@ if __name__ == '__main__':
     for RESOLUTION in RESOLUTIONS:
         OUT = OUTPUT_ROOT / RESOLUTION[0]
         if args.plot_only:
-            raw = [json.loads(line) for line in (OUT / 'runs.jsonl').read_text().splitlines()]
+            raw = load_selected_runs(OUT / 'runs.jsonl')
         else:
             raw = collect()
         validate_records(raw)
