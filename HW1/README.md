@@ -168,12 +168,14 @@ Coloana W arată media maximului timpului cumulat de calcul pe un worker
 din fiecare rulare. Nu include timpii de așteptare și transfer ai workerului.
 Coloanele C și W se suprapun în timp și nu se adună.
 
-## Pilot de dezvoltare, blur cu coordonator pe Victus
+## Benchmark pe două calculatoare, 1.5MP, 4MP și 8MP
 
-Scriptul `benchmark_two_machines_small.py` măsoară numai blur 9×9 pe imaginea
-256×256. Rangul 0 rulează întotdeauna pe Victus, inclusiv pentru configurațiile
-cu workeri numai pe HP-Laptop. Limitele sunt 2 workeri HP-Laptop și 8 workeri
-Victus, fără coordonator. Referința secvențială rulează tot pe Victus.
+Scriptul `benchmark_two_machines_small.py` măsoară grayscale, blur 9×9,
+rotate90 și pipeline-ul grayscale,blur,flip la toate cele trei rezoluții.
+Coordonatorul rulează pe HP-Laptop pentru testele exclusiv pe HP-Laptop și
+pe Victus pentru testele Victus și cele mixte. Limitele sunt 2 workeri pe
+HP-Laptop și 8 pe Victus, fără coordonator. Graficul HP-Laptop include
+1 proces secvențial, 2 procese cu un worker și 3 procese cu doi workeri.
 
 Din directorul `HW1`, cu ambele calculatoare accesibile prin SSH și cu același
 director disponibil pe ambele, rulează:
@@ -182,14 +184,24 @@ director disponibil pe ambele, rulează:
 uv run --with numpy --with matplotlib python benchmark_two_machines_small.py
 ```
 
-Sunt 79 de configurații cu câte 3 repetări, în total 237 de rulări măsurate.
-Scriptul compilează programul MPI și reia măsurătorile lipsă din jurnal.
-Raportul rezultat este `experimental_study_256x256_blur_victus.md`, iar datele
-și cele trei figuri sunt în `benchmark_small_two_machines_blur_victus/`.
-Aceste rezultate sunt separate de pilotul anterior, care avea alte plasări
-ale coordonatorului.
+Sunt 320 de configurații pentru fiecare rezoluție, cu câte 3 repetări,
+în total 2.880 de rulări măsurate. Programul afișează numărul de rulări
+terminate, timpul scurs și ETA. Estimarea folosește durata rulărilor din
+sesiunea curentă, inclusiv lansarea MPI, și se actualizează o dată pe secundă
+în timpul unui job. ETA este aproximativă, deoarece operațiile și rezoluțiile
+au durate diferite. Generarea rapoartelor urmează după măsurători.
 
-Pentru regenerarea raportului și figurilor după o rulare completă:
+Scriptul compilează programul MPI și reia măsurătorile lipsă din jurnal.
+Datele și figurile sunt separate în `benchmark_two_machines/1.5MP/`,
+`benchmark_two_machines/4MP/` și `benchmark_two_machines/8MP/`.
+Rapoartele sunt `experimental_study_two_machines_1.5MP.md`,
+`experimental_study_two_machines_4MP.md` și
+`experimental_study_two_machines_8MP.md`. Fiecare rezoluție are 12 figuri,
+cu patru panouri fiecare. Graficele de timp folosesc aceeași limită verticală
+pentru toate rezoluțiile. CSV-urile păstrează și eficiența, plus timpii pe
+worker, pentru analize ulterioare.
+
+Pentru regenerarea rapoartelor și figurilor după o rulare completă:
 
 ```bash
 uv run --with numpy --with matplotlib python benchmark_two_machines_small.py --plot-only
