@@ -14,7 +14,7 @@ Speedup = media timpului secvențial / media timpului paralel. Referința secven
 
 Timpii provin din instrumentarea C și exclud lansarea MPI, citirea imaginii, scrierea rezultatului și verificarea pixelilor. Prima repetare a fiecărei configurații salvează rezultatul pentru comparație integrală cu referința secvențială. Celelalte repetări folosesc ieșirea NONE. Timpii sunt afișați ca medie și abatere standard. Trei repetări oferă o verificare pilot, cu precizie limitată pentru operațiile scurte.
 
-Toate graficele de timp folosesc aceeași limită verticală, inclusiv graficele strategiilor. Graficele de speedup folosesc o limită comună. Valorile extreme ridică limita verticală, astfel că unele curbe și bare sunt aproape de zero pe această scară. Tabelele păstrează valorile numerice. Datele brute includ timpii fiecărui worker, distribuția pe calculatoare și datele necesare eficienței. Variația cu rezoluția necesită măsurători la alte dimensiuni și nu poate fi evaluată cu această singură imagine.
+Cele patru panouri ale graficelor de timp și speedup folosesc aceeași limită verticală, calculată din maximul datelor afișate în acea figură, cu 10% spațiu suplimentar. Graficele strategiilor au două rânduri: configurațiile pe un singur calculator sus și configurațiile mixte jos. Fiecare rând folosește propria limită verticală comună, calculată din maximul celor două panouri, cu 10% spațiu suplimentar. Pentru timp sunt incluse benzile de abatere standard și referințele secvențiale; pentru strategii sunt incluse înălțimile totale ale barelor suprapuse. Limitele sunt calculate separat pentru fiecare operație și tip de grafic. Valorile extreme din aceeași figură pot comprima curbele și barele mai mici. Tabelele păstrează valorile numerice. Datele brute includ timpii fiecărui worker, distribuția pe calculatoare și datele necesare eficienței. Variația cu rezoluția necesită măsurători la alte dimensiuni și nu poate fi evaluată cu această singură imagine.
 
 ## grayscale
 
@@ -58,7 +58,7 @@ Cel mai mic timp paralel mediu este 1.948 ms, cu static_1d, 0 workeri HP-Laptop 
 
 ## Verificare și interpretare
 
-Cea mai lentă repetare a durat 10767.017 ms, pentru rotate90, dynamic_1d, cu 1 worker HP-Laptop și 8 workeri Victus. Cea mai mare abatere standard relativă este 149.5%, pentru rotate90, dynamic_1d, HP=1, Victus=4. Am păstrat toate repetările. Acest pilot verifică matricea și graficele, dar variația limitează concluziile despre ordinea strategiilor. Nu am măsurat separat rețeaua sau încărcarea de fond, deci nu pot atribui variația unei singure cauze.
+Cea mai lentă repetare a durat 10767.017 ms, pentru rotate90, dynamic_1d, cu 1 workeri HP-Laptop și 8 workeri Victus. Cea mai mare abatere standard relativă este 149.5%, pentru rotate90, dynamic_1d, HP=1, Victus=4. Am păstrat toate repetările. Acest pilot verifică matricea și graficele, dar variația limitează concluziile despre ordinea strategiilor. Nu am măsurat separat rețeaua sau încărcarea de fond, deci nu pot atribui variația unei singure cauze.
 
 Toate cele 320 de configurații au rezultate identice pixel cu pixel cu referința secvențială în prima repetare.
 
