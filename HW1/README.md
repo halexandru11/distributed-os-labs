@@ -167,3 +167,30 @@ măsurătorilor.
 Coloana W arată media maximului timpului cumulat de calcul pe un worker
 din fiecare rulare. Nu include timpii de așteptare și transfer ai workerului.
 Coloanele C și W se suprapun în timp și nu se adună.
+
+## Pilot de dezvoltare, blur cu coordonator pe Victus
+
+Scriptul `benchmark_two_machines_small.py` măsoară numai blur 9×9 pe imaginea
+256×256. Rangul 0 rulează întotdeauna pe Victus, inclusiv pentru configurațiile
+cu workeri numai pe HP-Laptop. Limitele sunt 2 workeri HP-Laptop și 8 workeri
+Victus, fără coordonator. Referința secvențială rulează tot pe Victus.
+
+Din directorul `HW1`, cu ambele calculatoare accesibile prin SSH și cu același
+director disponibil pe ambele, rulează:
+
+```bash
+uv run --with numpy --with matplotlib python benchmark_two_machines_small.py
+```
+
+Sunt 79 de configurații cu câte 3 repetări, în total 237 de rulări măsurate.
+Scriptul compilează programul MPI și reia măsurătorile lipsă din jurnal.
+Raportul rezultat este `experimental_study_256x256_blur_victus.md`, iar datele
+și cele trei figuri sunt în `benchmark_small_two_machines_blur_victus/`.
+Aceste rezultate sunt separate de pilotul anterior, care avea alte plasări
+ale coordonatorului.
+
+Pentru regenerarea raportului și figurilor după o rulare completă:
+
+```bash
+uv run --with numpy --with matplotlib python benchmark_two_machines_small.py --plot-only
+```

@@ -14,28 +14,28 @@ import benchmark as b
 import matplotlib.pyplot as plt
 
 ROOT = Path(__file__).resolve().parent
-OUT = ROOT / 'benchmark_small_two_machines'
-OPS = b.OPS
+OUT = ROOT / 'benchmark_small_two_machines_blur_victus'
+OPS = ['blur']
 MODES = b.MODES
 REPS = 3
 CONFIGS = [(h, 0) for h in (1, 2)] + [(0, v) for v in range(1, 9)] + [(h, v) for h in (1, 2) for v in range(1, 9)]
 PROFILES = [(2, 0), (0, 4), (2, 4), (2, 8)]
-TITLES = ['HP-Laptop only', 'Victus only', 'HP-Laptop: 1 worker + Victus', 'HP-Laptop: 2 workers + Victus']
+TITLES = ['HP-Laptop workers only', 'Victus workers only', 'HP-Laptop: 1 worker + Victus', 'HP-Laptop: 2 workers + Victus']
 COLORS = ['#2878b5', '#e58b26', '#38945b']
 
 
 def command(h, v, mode, op, output):
     args = [str(OUT / 'mpi_image_proc'), str(ROOT / 'test_images/sample_small.ppm'), str(output), mode, op]
     cmd = ['mpirun', '--oversubscribe', '--bind-to', 'none']
-    if mode == 'seq':
-        return cmd + ['-np', '1', '--host', 'HP-Laptop' if h else 'victus'] + args
-    if h:
-        cmd += ['-np', str(h + 1), '--host', 'HP-Laptop'] + args
-        if v:
-            cmd += [':', '-np', str(v), '--host', 'victus'] + args
-    else:
-        cmd += ['-np', str(v + 1), '--host', 'victus'] + args
+    # Open MPI assigns rank 0 to the first application context.
+    # Keep the coordinator separate so ranks 1..h remain HP workers.
+    cmd += ['-np', '1', '--host', 'victus'] + args
+    if mode != 'seq':
+        for host, count in [('HP-Laptop', h), ('victus', v)]:
+            if count:
+                cmd += [':', '-np', str(count), '--host', host] + args
     return cmd
+
 
 
 def run(h, v, mode, op, output):
@@ -60,21 +60,21 @@ def collect():
     metadata = {'date': time.strftime('%Y-%m-%d %H:%M:%S %z'), 'repetitions': REPS,
                 'image_sha256': hashlib.sha256((ROOT / 'test_images/sample_small.ppm').read_bytes()).hexdigest(),
                 'source_sha256': hashlib.sha256((ROOT / b.C_SOURCE).read_bytes()).hexdigest(),
-                'binding': 'none', 'mixed_coordinator': 'HP-Laptop', 'machines': {}}
+                'binding': 'none', 'coordinator': 'victus', 'machines': {}}
     for host in ['HP-Laptop', 'victus']:
         metadata['machines'][host] = subprocess.check_output(['ssh', '-o', 'BatchMode=yes', host, 'hostname; lscpu; mpirun --version'], text=True)
     (OUT / 'metadata.json').write_text(json.dumps(metadata, indent=2))
     path = OUT / 'runs.jsonl'
     previous = [json.loads(x) for x in path.read_text().splitlines()] if path.exists() else []
     done = {(x['op'], x['mode'], x['hp'], x['victus'], x['repeat']) for x in previous}
-    jobs = [(op, 'seq', h, v) for op in OPS for h, v in [(1, 0), (0, 1)]]
+    jobs = [(op, 'seq', 0, 0) for op in OPS]
     jobs += [(op, mode, h, v) for op in OPS for mode in MODES for h, v in CONFIGS]
     total = len(jobs) * REPS
     with tempfile.TemporaryDirectory(dir=OUT) as tmp, path.open('a', buffering=1) as raw:
         references = {}
         for op in OPS:
             reference = Path(tmp) / (op.replace(',', '_') + '.ppm')
-            run(1, 0, 'seq', op, reference)
+            run(0, 0, 'seq', op, reference)
             references[op] = reference
         for op, mode, h, v in jobs:
             for repeat in range(REPS):
@@ -100,7 +100,7 @@ def figures_and_report(raw):
     rows = []
     for (op, mode, h, v), runs in grouped.items():
         row = dict(op=op, mode=mode, hp=0 if mode == 'seq' else h, victus=0 if mode == 'seq' else v, workers=0 if mode == 'seq' else h+v,
-                   coordinator='HP-Laptop' if h else 'victus', repetitions=len(runs))
+                   coordinator='victus', repetitions=len(runs))
         for key in ['total', 'comm', 'pack', 'comp', 'send', 'wait']:
             row[key] = statistics.mean(r[key] for r in runs)
         row['std'] = statistics.stdev(r['total'] for r in runs)
@@ -119,16 +119,16 @@ def figures_and_report(raw):
     with (OUT / 'runs.csv').open('w') as f:
         writer = csv.DictWriter(f, fieldnames=list(raw[0]) + ['coordinator'])
         writer.writeheader()
-        writer.writerows(dict(r, hp=0 if r['mode'] == 'seq' else r['hp'], victus=0 if r['mode'] == 'seq' else r['victus'], coordinator='HP-Laptop' if r['hp'] else 'victus') for r in raw)
+        writer.writerows(dict(r, hp=0 if r['mode'] == 'seq' else r['hp'], victus=0 if r['mode'] == 'seq' else r['victus'], coordinator='victus') for r in raw)
     time_max = max(r['total'] + r['std'] for r in rows) * 1100
     speed_max = max(1, max(r['speedup'] for r in rows)) * 1.1
     report = ['# Studiu pilot pe două calculatoare, 256×256', '',
         'Imaginea `test_images/sample_small.ppm` are 65.536 pixeli. Acest raport păstrează studiul original și folosește numai imaginea de 256×256.', '',
         '## Metodologie', '',
-        f'Am măsurat {len(rows)} de configurații, cu câte {REPS} repetări, în total {len(raw)} de rulări măsurate. Cele patru operații sunt grayscale, blur 9×9, rotate90 și pipeline-ul grayscale,blur,flip. Strategiile sunt static_1d, static_2d și dynamic_1d.', '',
+        f'Am măsurat {len(rows)} de configurații, cu câte {REPS} repetări, în total {len(raw)} de rulări măsurate. În această etapă măsurăm numai blur 9×9. Strategiile sunt static_1d, static_2d și dynamic_1d.', '',
         'HP-Laptop are un Intel Core i7-7500U, cu 2 nuclee și 4 fire hardware. Victus are un Intel Core i5-12500H și 16 fire hardware. Am folosit Open MPI 4.1.6, compilare `mpicc -O3 -Wall` și `--bind-to none`. Procesele rulează fără fixare pe nuclee. Coordonatorul este un proces suplimentar față de numărul de workeri.', '',
-        'În rulările mixte, rangul 0 și primii 1 sau 2 workeri sunt pe HP-Laptop, iar restul workerilor sunt pe Victus. În rulările pe un singur calculator, coordonatorul rulează pe același calculator. Limitele de 2 și 8 se referă la workeri.', '',
-        'Speedup = media timpului secvențial / media timpului paralel. Referința secvențială rulează pe calculatorul coordonatorului, deci HP-Laptop pentru configurațiile mixte. Eficiența este speedup / numărul total de workeri. Pe calculatoare diferite, acest raport depinde de performanța referinței secvențiale.', '',
+        'Rangul 0 este întotdeauna pe Victus, inclusiv când toți workerii sunt pe HP-Laptop. Rangurile 1 până la numărul de workeri HP-Laptop rulează pe HP-Laptop, iar workerii rămași rulează pe Victus. Limitele de 2 și 8 se referă la workeri, fără coordonator.', '',
+        'Speedup = media timpului secvențial / media timpului paralel. Referința secvențială rulează întotdeauna pe Victus. Eficiența este speedup / numărul total de workeri. Pe calculatoare diferite, acest raport depinde de performanța referinței secvențiale.', '',
         'Timpii provin din instrumentarea C și exclud lansarea MPI, citirea imaginii, scrierea rezultatului și verificarea pixelilor. Prima repetare a fiecărei configurații salvează rezultatul pentru comparație integrală cu referința secvențială. Celelalte repetări folosesc ieșirea NONE. Timpii sunt afișați ca medie și abatere standard. Trei repetări oferă o verificare pilot, cu precizie limitată pentru operațiile scurte.', '',
         'Toate graficele de timp folosesc aceeași limită verticală, inclusiv graficele strategiilor. Graficele de speedup folosesc o limită comună. Valorile extreme ridică limita verticală, astfel că unele curbe și bare sunt aproape de zero pe această scară. Tabelele păstrează valorile numerice. Datele brute includ timpii fiecărui worker, distribuția pe calculatoare și datele necesare eficienței. Variația cu rezoluția necesită măsurători la alte dimensiuni și nu poate fi evaluată cu această singură imagine.', '']
     for op in OPS:
@@ -147,7 +147,7 @@ def figures_and_report(raw):
                     if metric == 'total':
                         ax.fill_between(x, [a-r['std']*1000 for a, r in zip(y, rr)], [a+r['std']*1000 for a, r in zip(y, rr)], color=color, alpha=.15)
                 if metric == 'total':
-                    ax.axhline(baselines[op, 'victus' if idx == 1 else 'HP-Laptop']*1000, color='gray', linestyle='--', label='Secvențial')
+                    ax.axhline(baselines[op, 'victus']*1000, color='gray', linestyle='--', label='Secvențial')
                 else:
                     ax.axhline(1, color='gray', linestyle='--')
                 ax.set(title=TITLES[idx], xlabel='Workeri HP-Laptop' if idx == 0 else 'Workeri Victus', ylim=(0, limit))
@@ -160,7 +160,7 @@ def figures_and_report(raw):
             fig.tight_layout(rect=(0, 0, 1, .86))
             fig.savefig(OUT / f'{filename}_{slug}.png', dpi=160, bbox_inches='tight')
             plt.close(fig)
-            report += [f'![{ylabel}, {op}](benchmark_small_two_machines/{filename}_{slug}.png)', '']
+            report += [f'![{ylabel}, {op}](benchmark_small_two_machines_blur_victus/{filename}_{slug}.png)', '']
         fig, axes = plt.subplots(1, 4, figsize=(30, 7), sharey=True)
         for ax, (h, v) in zip(axes, PROFILES):
             ticks, labels = [], []
@@ -174,7 +174,7 @@ def figures_and_report(raw):
                     bottom += value*1000
                 ax.annotate(f'{r["total"]*1000:.2f} ms', (pos, r['total']*1000), xytext=(0, 6), textcoords='offset points', ha='center', fontsize=7, rotation=45)
                 ticks.append(pos)
-                labels.append('C\n' + ('HP' if h else 'V'))
+                labels.append('C\nV')
                 start = pos
                 for i, (comp, ops) in enumerate(zip(r['workers_comp'], r['workers_ops'])):
                     pos += 1
@@ -194,7 +194,7 @@ def figures_and_report(raw):
         fig.tight_layout(rect=(0, .12, 1, .86))
         fig.savefig(OUT / f'partition_strategies_{slug}.png', dpi=160, bbox_inches='tight')
         plt.close(fig)
-        report += [f'![Strategii, {op}](benchmark_small_two_machines/partition_strategies_{slug}.png)', '']
+        report += [f'![Strategii, {op}](benchmark_small_two_machines_blur_victus/partition_strategies_{slug}.png)', '']
         best = min(subset, key=lambda r: r['total'])
         report += [f'Cel mai mic timp paralel mediu este {best["total"]*1000:.3f} ms, cu {best["mode"]}, {best["hp"]} workeri HP-Laptop și {best["victus"]} workeri Victus. Speedup față de referința de pe {best["coordinator"]} este {best["speedup"]:.2f}.', '']
     worst = max((r for r in rows if r['mode'] != 'seq'), key=lambda r: r['std'] / r['total'])
@@ -209,12 +209,12 @@ def figures_and_report(raw):
         'Pentru regenerarea raportului și a figurilor din măsurătorile salvate:', '',
         '```bash', 'uv run --with numpy --with matplotlib python benchmark_two_machines_small.py --plot-only', '```', '',
         '## Date complete', '',
-        'Datele sunt în [results.csv](benchmark_small_two_machines/results.csv), [runs.csv](benchmark_small_two_machines/runs.csv) și [runs.jsonl](benchmark_small_two_machines/runs.jsonl). Fișierul [metadata.json](benchmark_small_two_machines/metadata.json) păstrează informațiile calculatoarelor și hash-urile imaginii și sursei. În jurnalul intern JSONL, pentru modul seq, hp=1 sau victus=1 selectează calculatorul referinței, fără workeri. Fișierele CSV arată zero workeri pentru modul seq.', '',
+        'Datele sunt în [results.csv](benchmark_small_two_machines_blur_victus/results.csv), [runs.csv](benchmark_small_two_machines_blur_victus/runs.csv) și [runs.jsonl](benchmark_small_two_machines_blur_victus/runs.jsonl). Fișierul [metadata.json](benchmark_small_two_machines_blur_victus/metadata.json) păstrează informațiile calculatoarelor și hash-urile imaginii și sursei. Câmpurile hp și victus reprezintă numărul de workeri. În modul seq, ambele sunt zero, iar singurul proces rulează pe Victus.', '',
         '| Operație | Strategie | HP workeri | Victus workeri | Coordonator | Total ms | Abatere ms | Speedup | Eficiență |',
         '| --- | --- | ---: | ---: | --- | ---: | ---: | ---: | ---: |']
     for r in rows:
         report.append(f'| {r["op"]} | {r["mode"]} | {r["workers"] if r["mode"] == "seq" else r["hp"]} | {0 if r["mode"] == "seq" else r["victus"]} | {r["coordinator"]} | {r["total"]*1000:.3f} | {r["std"]*1000:.3f} | {r["speedup"]:.3f} | {r["efficiency"]:.3f} |')
-    (ROOT / 'experimental_study_256x256_two_machines.md').write_text('\n'.join(report) + '\n')
+    (ROOT / 'experimental_study_256x256_blur_victus.md').write_text('\n'.join(report) + '\n')
     print('Report written.', flush=True)
 
 
@@ -226,7 +226,7 @@ if __name__ == '__main__':
         raw = [json.loads(line) for line in (OUT / 'runs.jsonl').read_text().splitlines()]
     else:
         raw = collect()
-    expected = (len(OPS) * 2 + len(OPS) * len(MODES) * len(CONFIGS)) * REPS
+    expected = (len(OPS) + len(OPS) * len(MODES) * len(CONFIGS)) * REPS
     if len(raw) != expected:
         raise RuntimeError(f'Incomplete pilot: {len(raw)} measurements, expected {expected}')
     figures_and_report(raw)
