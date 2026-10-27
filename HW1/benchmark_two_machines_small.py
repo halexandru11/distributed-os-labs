@@ -120,8 +120,6 @@ def figures_and_report(raw):
         writer = csv.DictWriter(f, fieldnames=list(raw[0]) + ['coordinator'])
         writer.writeheader()
         writer.writerows(dict(r, hp=0 if r['mode'] == 'seq' else r['hp'], victus=0 if r['mode'] == 'seq' else r['victus'], coordinator='HP-Laptop' if r['hp'] else 'victus') for r in raw)
-    time_max = max(r['total'] + r['std'] for r in rows) * 1100
-    speed_max = max(1, max(r['speedup'] for r in rows)) * 1.1
     report = ['# Studiu pilot pe două calculatoare, 256×256', '',
         'Imaginea `test_images/sample_small.ppm` are 65.536 pixeli. Acest raport păstrează studiul original și folosește numai imaginea de 256×256.', '',
         '## Metodologie', '',
@@ -130,10 +128,16 @@ def figures_and_report(raw):
         'În rulările mixte, rangul 0 și primii 1 sau 2 workeri sunt pe HP-Laptop, iar restul workerilor sunt pe Victus. În rulările pe un singur calculator, coordonatorul rulează pe același calculator. Limitele de 2 și 8 se referă la workeri.', '',
         'Speedup = media timpului secvențial / media timpului paralel. Referința secvențială rulează pe calculatorul coordonatorului, deci HP-Laptop pentru configurațiile mixte. Eficiența este speedup / numărul total de workeri. Pe calculatoare diferite, acest raport depinde de performanța referinței secvențiale.', '',
         'Timpii provin din instrumentarea C și exclud lansarea MPI, citirea imaginii, scrierea rezultatului și verificarea pixelilor. Prima repetare a fiecărei configurații salvează rezultatul pentru comparație integrală cu referința secvențială. Celelalte repetări folosesc ieșirea NONE. Timpii sunt afișați ca medie și abatere standard. Trei repetări oferă o verificare pilot, cu precizie limitată pentru operațiile scurte.', '',
-        'Toate graficele de timp folosesc aceeași limită verticală, inclusiv graficele strategiilor. Graficele de speedup folosesc o limită comună. Valorile extreme ridică limita verticală, astfel că unele curbe și bare sunt aproape de zero pe această scară. Tabelele păstrează valorile numerice. Datele brute includ timpii fiecărui worker, distribuția pe calculatoare și datele necesare eficienței. Variația cu rezoluția necesită măsurători la alte dimensiuni și nu poate fi evaluată cu această singură imagine.', '']
+        'Cele patru panouri ale graficelor de timp și speedup folosesc aceeași limită verticală, calculată din maximul datelor afișate în acea figură, cu 10% spațiu suplimentar. Graficele strategiilor au două rânduri: configurațiile pe un singur calculator sus și configurațiile mixte jos. Fiecare rând folosește propria limită verticală comună, calculată din maximul celor două panouri, cu 10% spațiu suplimentar. Pentru timp sunt incluse benzile de abatere standard și referințele secvențiale; pentru strategii sunt incluse înălțimile totale ale barelor suprapuse. Limitele sunt calculate separat pentru fiecare operație și tip de grafic. Valorile extreme din aceeași figură pot comprima curbele și barele mai mici. Tabelele păstrează valorile numerice. Datele brute includ timpii fiecărui worker, distribuția pe calculatoare și datele necesare eficienței. Variația cu rezoluția necesită măsurători la alte dimensiuni și nu poate fi evaluată cu această singură imagine.', '']
     for op in OPS:
         slug = op.replace(',', '_')
         subset = [r for r in rows if r['op'] == op and r['mode'] != 'seq']
+        # Share a scale within each four-panel figure, not across operations.
+        time_max = max(
+            max(r['total'] + r['std'] for r in subset),
+            *(baselines[op, host] for host in ('HP-Laptop', 'victus')),
+        ) * 1100
+        speed_max = max(1, max(r['speedup'] for r in subset)) * 1.1
         report += [f'## {op}', '']
         for metric, filename, ylabel, limit in [('total', 'execution_time', 'Timp total (ms)', time_max), ('speedup', 'speedup', 'Speedup', speed_max)]:
             fig, axes = plt.subplots(1, 4, figsize=(22, 5), sharey=True)
@@ -161,8 +165,16 @@ def figures_and_report(raw):
             fig.savefig(OUT / f'{filename}_{slug}.png', dpi=160, bbox_inches='tight')
             plt.close(fig)
             report += [f'![{ylabel}, {op}](benchmark_small_two_machines/{filename}_{slug}.png)', '']
-        fig, axes = plt.subplots(1, 4, figsize=(30, 7), sharey=True)
-        for ax, (h, v) in zip(axes, PROFILES):
+        fig, axes = plt.subplots(2, 2, figsize=(20, 12), sharey='row')
+        partition_limits = []
+        for profiles in (PROFILES[:2], PROFILES[2:]):
+            profile_rows = [r for r in subset if (r['hp'], r['victus']) in profiles]
+            partition_limits.append(max(
+                max(r['total'], r['pack'] + r['send'] + r['wait'],
+                    *(comp + ops for comp, ops in zip(r['workers_comp'], r['workers_ops'])))
+                for r in profile_rows
+            ) * 1100)
+        for idx, (ax, (h, v)) in enumerate(zip(axes.flat, PROFILES)):
             ticks, labels = [], []
             pos = 0
             for mode in MODES:
@@ -185,13 +197,14 @@ def figures_and_report(raw):
                 ax.text((start+pos)/2, -.29, mode, ha='center', transform=ax.get_xaxis_transform(), fontsize=10)
                 pos += 2
             ax.set_xticks(ticks, labels, rotation=90, fontsize=7)
-            ax.set(title=f'HP-Laptop: {h} workeri | Victus: {v} workeri', ylim=(0, time_max))
+            ax.set(title=f'HP-Laptop: {h} workeri | Victus: {v} workeri', ylim=(0, partition_limits[idx // 2]))
             ax.grid(axis='y', alpha=.25)
-        axes[0].set_ylabel('Timp (ms)')
-        handles, labels = axes[0].get_legend_handles_labels()
+        for ax in axes[:, 0]:
+            ax.set_ylabel('Timp (ms)')
+        handles, labels = axes[0, 0].get_legend_handles_labels()
         fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(.5, .95), ncol=6)
         fig.suptitle(f'{op} | 256×256', y=.995)
-        fig.tight_layout(rect=(0, .12, 1, .86))
+        fig.tight_layout(rect=(0, .06, 1, .91), h_pad=7)
         fig.savefig(OUT / f'partition_strategies_{slug}.png', dpi=160, bbox_inches='tight')
         plt.close(fig)
         report += [f'![Strategii, {op}](benchmark_small_two_machines/partition_strategies_{slug}.png)', '']
