@@ -1,86 +1,208 @@
 # Studiu pe două calculatoare, 4MP
 
-Imaginea `test_images/sample_4MP.ppm` are 2400×1600 pixeli. Rezultatele sunt separate de studiile anterioare.
+Imaginea `test_images/sample_4MP.ppm` are `2400×1600` pixeli. Rezultatele sunt separate de studiile anterioare.
 
 ## Metodologie
 
-Am măsurat 320 de configurații, cu câte 3 repetări, în total 960 de rulări măsurate. Operațiile sunt grayscale, blur 9×9, rotate90 și pipeline-ul grayscale,blur,flip. Strategiile sunt static_1d, static_2d și dynamic_1d.
+### Conexiune și configurații
 
-HP-Laptop are un Intel Core i7-7500U, cu 2 nuclee și 4 fire hardware. Victus are un Intel Core i5-12500H și 16 fire hardware. Am folosit Open MPI 4.1.6, compilare `mpicc -O3 -Wall` și `--bind-to none`. Procesele rulează fără fixare pe nuclee. Coordonatorul este un proces suplimentar față de numărul de workeri.
+Inițial, am conectat laptopurile prin Wi-Fi, dar conexiunea a fost prea lentă pentru experimente. Am trecut la o conexiune directă prin cablu Ethernet între laptopuri. **Toate măsurătorile raportate în acest studiu au fost colectate folosind conexiunea Ethernet.**
 
-Rangul 0 rulează pe HP-Laptop pentru testele exclusiv pe HP-Laptop și pe Victus pentru celelalte teste. Graficul HP-Laptop include 1 proces secvențial, 2 procese cu un worker și 3 procese cu doi workeri. Rangurile 1 până la numărul de workeri HP-Laptop rulează pe HP-Laptop, iar workerii rămași rulează pe Victus. Limitele de 2 și 8 se referă la workeri, fără coordonator.
+Am măsurat `320` de configurații, cu câte `3` repetări, în total `960` de rulări măsurate. Operațiile sunt `grayscale`, `blur` `9×9`, `rotate90` și pipeline-ul `grayscale,blur,flip`. Strategiile sunt `static_1d`, `static_2d` și `dynamic_1d`.
 
-Speedup = media timpului secvențial / media timpului paralel. Referința secvențială rulează pe HP-Laptop pentru testele exclusiv pe HP-Laptop și pe Victus pentru celelalte teste. Eficiența este speedup / numărul total de workeri. Pe calculatoare diferite, acest raport depinde de performanța referinței secvențiale.
+### Calculatoare și procese
 
-Timpii provin din instrumentarea C și exclud lansarea MPI, citirea imaginii, scrierea rezultatului și verificarea pixelilor. Prima repetare a fiecărei configurații salvează rezultatul pentru comparație integrală cu referința secvențială. Celelalte repetări folosesc ieșirea NONE. Timpii sunt afișați ca medie și abatere standard. Trei repetări oferă o verificare pilot, cu precizie limitată pentru operațiile scurte.
+- HP-Laptop are un Intel Core i7-7500U, cu `2` nuclee și `4` fire hardware.
 
-În fiecare imagine, cele patru grafice folosesc aceeași scară verticală, cu limita inferioară zero. Limita superioară depinde de datele afișate în imagine, inclusiv benzile de abatere standard și înălțimea totală a barelor suprapuse, cu spațiu liber deasupra. Imaginile diferite pot avea limite superioare diferite. Tabelele păstrează valorile numerice. Datele brute includ timpii fiecărui worker, distribuția pe calculatoare și datele necesare eficienței. Suita măsoară aceleași configurații la 1.5MP, 4MP și 8MP. Datele pentru eficiență și variația cu rezoluția sunt în CSV-urile fiecărei rezoluții.
+- Victus are un Intel Core i5-12500H cu `12` nuclee, dintre care `4` de performanță, P-cores, și `8` de eficiență, E-cores, și `16` fire hardware, numite și procesoare logice.
+
+- Am folosit Open MPI `4.1.6`, compilare `mpicc -O3 -Wall` și `--bind-to none`. Procesele rulează fără fixare pe nuclee.
+
+- Coordonatorul este un proces suplimentar față de numărul de workeri.
+
+- Rangul `0` rulează pe HP-Laptop pentru testele exclusiv pe HP-Laptop și pe Victus pentru celelalte teste. Graficul HP-Laptop include `1` proces secvențial, `2` procese cu un worker și `3` procese cu doi workeri.
+
+- Rangurile `1` până la numărul de workeri HP-Laptop rulează pe HP-Laptop, iar workerii rămași rulează pe Victus. Limitele de `2` și `8` se referă la workeri, fără coordonator.
+
+### Indicatori și măsurare
+
+- Speedup = media timpului secvențial / media timpului paralel. Referința secvențială rulează pe HP-Laptop pentru testele exclusiv pe HP-Laptop și pe Victus pentru celelalte teste.
+
+- Eficiența paralelă este speedup / numărul total de workeri, fără coordonator. Pentru rândurile secvențiale, speedup-ul și eficiența au prin convenție valoarea `1`.
+
+- Speedup-urile din panoul HP-Laptop și din celelalte panouri folosesc referințe diferite și nu trebuie comparate ca și cum ar avea aceeași bază. Pentru comparația directă a configurațiilor folosim timpul total.
+
+- Timpii provin din instrumentarea C și exclud lansarea MPI, citirea imaginii, scrierea rezultatului și verificarea pixelilor. Pentru pipeline, timpul total este suma intervalelor instrumentate pentru cele trei operații.
+
+- Prima repetare a fiecărei configurații salvează rezultatul pentru comparație integrală cu referința secvențială. Celelalte repetări folosesc ieșirea `NONE`.
+
+- Curbele de timp arată media, iar benzile arată media plus/minus o abatere standard, fără a reprezenta intervale de încredere. Graficele de speedup și de strategii arată valori medii, fără benzi de variație.
+
+### Citirea graficelor
+
+- În fiecare imagine, cele patru grafice folosesc aceeași scară verticală, cu limita inferioară zero. Limita superioară depinde de datele afișate în imagine, inclusiv benzile de abatere standard și înălțimea totală a barelor suprapuse, cu spațiu liber deasupra.
+
+- Imaginile diferite pot avea limite superioare diferite. Tabelele păstrează valorile numerice.
+
+- Datele brute includ timpii fiecărui worker, distribuția pe calculatoare și datele necesare eficienței. Suita măsoară aceleași configurații la `1.5MP`, `4MP` și `8MP`.
+
+- Datele pentru eficiență și variația cu rezoluția sunt în CSV-urile fiecărei rezoluții.
 
 ## grayscale
 
+### Timp total
+
 ![Timp total (ms), grayscale](benchmark_two_machines/4MP/execution_time_grayscale.png)
+
+- **Cel mai mic timp paralel mediu este `11.893 ms`, cu `static_2d` și `5` workeri numai pe Victus.** Curba `static_2d` nu scade continuu.
+
+- Cu `4` workeri timpul este `17.554 ms`, iar cu `6` este `17.333 ms`. Codul folosește benzi pe toată lățimea pentru numere prime de workeri, precum `3` și `5`, dar introduce mai multe coloane pentru `4` și `6`.
+
+- Pack/unpack pentru aceste blocuri poate explica o parte din creșteri. Numărul de workeri schimbă astfel și forma sarcinilor, nu doar cantitatea de calcul atribuită fiecăruia.
+
+### Speedup
 
 ![Speedup, grayscale](benchmark_two_machines/4MP/speedup_grayscale.png)
 
+- **Pe Victus, speedup-ul maxim măsurat este `1.11`, față de referința de `13.233 ms`.** Pentru `dynamic_1d`, creșterea de la `7` la `8` workeri reduce speedup-ul de la `1.01` la `0.70`, deci media cu `8` workeri este mai lentă decât referința secvențială.
+
+- Timpul la `8` workeri este `18.832 ms`, cu abatere standard de `5.008 ms`. Grayscale are puțin calcul per pixel.
+
+- Adăugarea workerilor împarte același calcul în sarcini mai mici, dar crește numărul mesajelor și costul coordonării. Economia de calcul poate să nu mai compenseze aceste costuri, ceea ce oferă o explicație pentru plafonare sau încetinire.
+
+- Concurența pentru memorie și variația planificării pot contribui și ele.
+
+### Compararea strategiilor
+
 ![Strategii, grayscale](benchmark_two_machines/4MP/partition_strategies_grayscale.png)
 
-Cel mai mic timp paralel mediu este 11.893 ms, cu static_2d, 0 workeri HP-Laptop și 5 workeri Victus. Speedup față de referința de pe victus este 1.11.
+- Barele compară patru configurații fixe, cu `2` HP și `0` Victus, `0` HP și `4` Victus, `2` HP și `4` Victus, respectiv `2` HP și `8` Victus. C reprezintă coordonatorul, W un worker, HP înseamnă HP-Laptop, iar V înseamnă Victus.
+
+- Fundalul roșu la opacitate de `15%` identifică procesele de pe Victus, iar fundalul alb procesele de pe HP-Laptop. Cu `4` workeri numai pe Victus, `dynamic_1d` ajunge la `12.525 ms`.
+
+- Cu `2` HP și `4` Victus, cel mai mic timp este `86.193 ms`, cu `static_1d`. Trimiterile blocante către procese de pe alt calculator și diferențele de viteză dintre workeri sunt explicații posibile pentru costul configurației mixte.
 
 ## blur
 
+### Timp total
+
 ![Timp total (ms), blur](benchmark_two_machines/4MP/execution_time_blur.png)
+
+- **Cel mai mic timp paralel mediu este `48.776 ms`, cu `dynamic_1d` și `8` workeri numai pe Victus.** Pentru `static_1d`, trecerea de la `7` la `8` workeri crește ușor media, de la `51.852 ms` la `53.058 ms`.
+
+- Abaterea standard crește de la `0.481 ms` la `5.932 ms`, deci scăderea performanței medii este mică față de variația repetărilor cu `8` workeri. Celelalte două strategii își reduc media la `8` workeri.
+
+### Speedup
 
 ![Speedup, blur](benchmark_two_machines/4MP/speedup_blur.png)
 
+- **Pe Victus, `dynamic_1d` ajunge la un speedup de `5.94` cu `8` workeri.** Pentru `static_1d`, speedup-ul scade de la `5.59` cu `7` workeri la `5.46` cu `8`.
+
+- Un worker suplimentar reduce calculul per worker, dar adaugă mesaje și coordonare. Dacă reducerea timpului de calcul este prea mică pentru a acoperi aceste costuri, speedup-ul poate plafona sau scădea.
+
+- Pentru `static_1d`, diferența dintre medii este mică față de variația repetărilor cu `8` workeri. Celelalte două strategii își reduc timpul mediu la această trecere.
+
+### Compararea strategiilor
+
 ![Strategii, blur](benchmark_two_machines/4MP/partition_strategies_blur.png)
 
-Cel mai mic timp paralel mediu este 48.776 ms, cu dynamic_1d, 0 workeri HP-Laptop și 8 workeri Victus. Speedup față de referința de pe victus este 5.94.
+- **Dynamic_1d are cel mai mic timp mediu în toate cele patru configurații afișate.** Cu `2` HP și `4` Victus ajunge la `95.217 ms`, iar cu `2` HP și `8` Victus la `70.653 ms`.
+
+- Redistribuirea sarcinilor poate reduce dezechilibrul dintre workeri. Totuși, varianta cu `4` workeri numai pe Victus durează `82.344 ms`, deci adăugarea celor doi workeri HP-Laptop nu aduce un câștig în comparația cu același număr de workeri Victus.
+
+- Segmentele MPI send și receive/wait includ blocare și așteptarea calculului, nu doar transferul prin rețea.
 
 ## rotate90
 
+### Timp total
+
 ![Timp total (ms), rotate90](benchmark_two_machines/4MP/execution_time_rotate90.png)
+
+- **Cel mai mic timp paralel mediu este `12.824 ms`, cu `dynamic_1d` și `3` workeri numai pe Victus.** Pentru `dynamic_1d`, mediile rămân apropiate între `3` și `7` workeri, apoi cresc la `17.336 ms` cu `8`, cu abatere standard de `4.000 ms`.
+
+- Datele indică un platou, urmat de un punct cu variație mai mare, în locul unei accelerări continue.
+
+### Speedup
 
 ![Speedup, rotate90](benchmark_two_machines/4MP/speedup_rotate90.png)
 
+- **Pe Victus, speedup-ul pentru `dynamic_1d` este `1.22` cu `3` workeri și `0.91` cu `8`.** Rotirea are puțin calcul per pixel.
+
+- Împărțirea aceleiași imagini în mai multe sarcini reduce calculul per worker, dar adaugă mesaje și coordonare. După un anumit punct, calculul economisit poate deveni prea mic pentru a compensa aceste costuri, ceea ce poate explica platoul și scăderea cu `8` workeri.
+
+- Concurența pentru memorie poate contribui și ea.
+
+### Compararea strategiilor
+
 ![Strategii, rotate90](benchmark_two_machines/4MP/partition_strategies_rotate90.png)
 
-Cel mai mic timp paralel mediu este 12.824 ms, cu dynamic_1d, 0 workeri HP-Laptop și 3 workeri Victus. Speedup față de referința de pe victus este 1.22.
+- **Cu `4` workeri numai pe Victus, `dynamic_1d` durează `13.180 ms`.** În configurația cu `2` HP și `4` Victus, cel mai mic timp este `84.603 ms`, tot cu `dynamic_1d`.
+
+- În cea cu `2` HP și `8` Victus, `static_2d` are cea mai mică medie, `61.377 ms`. Strategia cu cel mai mic timp se schimbă odată cu configurația.
+
+- Pack/unpack pentru regiunile imaginii rotite și transferurile către celălalt calculator pot reduce beneficiul calculului paralel.
 
 ## grayscale,blur,flip
 
+### Timp total
+
 ![Timp total (ms), grayscale,blur,flip](benchmark_two_machines/4MP/execution_time_grayscale_blur_flip.png)
+
+- **Cel mai mic timp paralel mediu este `66.473 ms`, cu `dynamic_1d` și `8` workeri numai pe Victus.** Pentru aceeași strategie, media crește ușor de la `75.613 ms` cu `6` workeri la `76.386 ms` cu `7`.
+
+- Abaterile standard sunt `1.074 ms` și `5.591 ms`, iar diferența dintre medii este mai mică decât abaterea standard cu `7` workeri.
+
+### Speedup
 
 ![Speedup, grayscale,blur,flip](benchmark_two_machines/4MP/speedup_grayscale_blur_flip.png)
 
+- **Pe Victus, `dynamic_1d` ajunge la un speedup de `4.72` cu `8` workeri.** Scăderea de la `4.15` cu `6` workeri la `4.11` cu `7` urmează aceeași variație a timpilor, fără o schimbare a referinței secvențiale.
+
+- Pipeline-ul comunică imaginea la fiecare etapă, inclusiv pentru `grayscale` și `flip`. În aceste etape scurte, mai mulți workeri pot lăsa prea puțin calcul per sarcină pentru a compensa comunicarea și coordonarea suplimentare.
+
+- Probabil, comunicarea și coordonarea repetate la fiecare etapă limitează scalarea pipeline-ului. Speedup-ul său include și costurile etapelor `grayscale` și `flip`, pe lângă cele ale `blur`-ului.
+
+### Compararea strategiilor
+
 ![Strategii, grayscale,blur,flip](benchmark_two_machines/4MP/partition_strategies_grayscale_blur_flip.png)
 
-Cel mai mic timp paralel mediu este 66.473 ms, cu dynamic_1d, 0 workeri HP-Laptop și 8 workeri Victus. Speedup față de referința de pe victus este 4.72.
+- **Cu `2` HP și `4` Victus, `dynamic_1d` are cel mai mic timp mediu, `247.752 ms`.** Cu `2` HP și `8` Victus, cea mai mică medie este `182.117 ms`, cu `static_1d`.
+
+- Aceste rezultate nu susțin o strategie câștigătoare pentru orice distribuție a proceselor. Redistribuirea dinamică poate echilibra calculul, dar adaugă mesaje la fiecare etapă, iar coordonatorul execută trimiteri și recepții blocante.
 
 ## Verificare și interpretare
 
-Cea mai lentă repetare a durat 507.170 ms, pentru grayscale,blur,flip, static_2d, cu 2 workeri HP-Laptop și 0 workeri Victus. Cea mai mare abatere standard relativă este 54.1%, pentru grayscale, dynamic_1d, HP=1, Victus=8. Am păstrat toate repetările. Acest pilot verifică matricea și graficele, dar variația limitează concluziile despre ordinea strategiilor. Nu am măsurat separat rețeaua sau încărcarea de fond, deci nu pot atribui variația unei singure cauze.
+- Cea mai lentă repetare a durat `507.170 ms`, pentru `grayscale,blur,flip`, `static_2d`, cu `2` workeri HP-Laptop și `0` workeri Victus. Cea mai mare abatere standard relativă este `54.1%`, pentru `grayscale`, `dynamic_1d`, `HP=1`, `Victus=8`.
 
-Toate cele 320 de configurații au rezultate identice pixel cu pixel cu referința secvențială în prima repetare.
+**Toate cele `320` de configurații au rezultate identice pixel cu pixel cu referința secvențială în prima repetare.**
 
-Barele C și W se suprapun în timp și nu se adună. HP înseamnă HP-Laptop, iar V înseamnă Victus. Fundalul roșu, cu opacitate de 15%, identifică barele de pe Victus. Barele de pe HP-Laptop au fundal alb. Barele workerilor arată calculul și timpul instrumentat de alocare/transfer. Timpul rămas până la timpul coordonatorului nu este etichetat drept inactivitate, deoarece programul nu măsoară separat acea durată. Segmentele pack/unpack nu sunt defalcate per worker, deoarece instrumentarea oferă numai totalul coordonatorului.
+- Barele coordonatorului și ale workerilor se suprapun în timp și nu se adună între procese. Pentru un worker, segmentele reprezintă calculul și timpul instrumentat pentru alocare, transfer și eliberarea bufferelor.
+
+- Așteptarea metadatelor următoarei sarcini nu intră în aceste segmente. Diferența până la timpul coordonatorului nu este, așadar, o măsură completă a inactivității.
+
+- Segmentele pack/unpack apar numai la coordonator. Explicațiile despre partiționare și instrumentare provin din [implementarea C](mpi_image_proc.c).
+
+- Configurațiile au fost executate succesiv, fără randomizare.
 
 ## Reproducere
 
-Scriptul separat este [benchmark_two_machines_small.py](benchmark_two_machines_small.py). Ambele calculatoare trebuie să acceseze același director și să accepte conexiuni SSH fără parolă. Rularea completă folosește comanda de mai jos. Scriptul reia configurațiile lipsă din jurnalul existent.
+Scriptul separat este [benchmark_two_machines_small.py](benchmark_two_machines_small.py). Ambele calculatoare trebuie să acceseze același director și să accepte conexiuni SSH fără parolă. Versiunea curentă selectează implicit numai pipeline-ul la `64MP`. Pentru acest studiu, constantele trebuie modificate la declarațiile lor în `RESOLUTIONS = [('4MP', 2560, 1440)]` și `OPS = ['grayscale', 'blur', 'rotate90', 'grayscale,blur,flip']`. Declarația `RESOLUTIONS` trebuie să rămână înaintea inițializării `RESOLUTION` și `OUT`. Scriptul reia configurațiile lipsă din jurnalul existent.
 
 ```bash
 uv run --with numpy --with matplotlib python benchmark_two_machines_small.py
 ```
 
-Pentru regenerarea raportului și a figurilor din măsurătorile salvate:
+Pentru regenerarea raportului și a figurilor din măsurătorile salvate, după selectarea rezoluției și a operațiilor de mai sus:
 
 ```bash
 uv run --with numpy --with matplotlib python benchmark_two_machines_small.py --plot-only
 ```
 
+Generatorul actual nu păstrează interpretările adăugate manual în acest fișier și are încă formulări de metodologie pentru rularea de `64MP`. Regenerarea suprascrie raportul, deci textul trebuie păstrat separat și revizuit după rulare.
+
 ## Date complete
 
-Datele sunt în [results.csv](benchmark_two_machines/4MP/results.csv), [runs.csv](benchmark_two_machines/4MP/runs.csv) și [runs.jsonl](benchmark_two_machines/4MP/runs.jsonl). Fișierul [metadata.json](benchmark_two_machines/4MP/metadata.json) păstrează informațiile calculatoarelor și hash-urile imaginii și sursei. Câmpurile hp și victus reprezintă numărul de workeri. În CSV, modul seq are zero workeri și coloana coordinator identifică laptopul. În jurnalul JSONL, hp=1 selectează referința secvențială HP-Laptop, iar hp=0 selectează Victus.
+Datele sunt în [results.csv](benchmark_two_machines/4MP/results.csv), [runs.csv](benchmark_two_machines/4MP/runs.csv) și [runs.jsonl](benchmark_two_machines/4MP/runs.jsonl). Fișierul [metadata.json](benchmark_two_machines/4MP/metadata.json) păstrează informațiile calculatoarelor și hash-urile imaginii și sursei. Câmpurile hp și victus reprezintă numărul de workeri. În CSV, modul seq are zero workeri și coloana coordinator identifică laptopul. În jurnalul JSONL, hp=`1` selectează referința secvențială HP-Laptop, iar hp=`0` selectează Victus.
 
 | Operație | Strategie | HP workeri | Victus workeri | Coordonator | Total ms | Abatere ms | Speedup | Eficiență |
 | --- | --- | ---: | ---: | --- | ---: | ---: | ---: | ---: |

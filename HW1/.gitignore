@@ -1,4 +1,4 @@
 ./mpi_image_proc
 __pycache__/
-./test_images/sample_32MP.ppm
-./test_images/sample_64MP.ppm
+/test_images/sample_32MP.ppm
+/test_images/sample_64MP.ppm
