@@ -12,6 +12,7 @@ import time
 
 import benchmark as b
 import matplotlib.pyplot as plt
+from matplotlib.patches import Patch
 
 ROOT = Path(__file__).resolve().parent
 OUTPUT_ROOT = ROOT / 'benchmark_two_machines'
@@ -26,6 +27,8 @@ CONFIGS = [(h, 0) for h in (1, 2)] + [(0, v) for v in range(1, 9)] + [(h, v) for
 PROFILES = [(2, 0), (0, 4), (2, 4), (2, 8)]
 TITLES = ['HP-Laptop workers only', 'Victus workers only', 'HP-Laptop: 1 worker + Victus', 'HP-Laptop: 2 workers + Victus']
 COLORS = ['#2878b5', '#e58b26', '#38945b']
+HOST_BACKGROUNDS = {'victus': '#ef5350'}
+HOST_BACKGROUND_ALPHA = .15
 
 
 def image_path():
@@ -246,17 +249,23 @@ def figures_and_report(raw):
             pos = 0
             for mode in MODES:
                 r = next(r for r in subset if (r['mode'], r['hp'], r['victus']) == (mode, h, v))
+                if coordinator(h, v) in HOST_BACKGROUNDS:
+                    ax.axvspan(pos - .5, pos + .5, color=HOST_BACKGROUNDS[coordinator(h, v)],
+                               alpha=HOST_BACKGROUND_ALPHA, linewidth=0, zorder=0)
                 parts = [r['pack'], r['send'], r['wait'], max(0, r['total']-r['pack']-r['send']-r['wait'])]
                 bottom = 0
                 for value, color, label in zip(parts, ['#2878b5', '#173c60', '#e58b26', '#abc9dc'], ['C: pack/unpack', 'C: MPI send', 'C: MPI receive/wait', 'C: alte operații']):
                     ax.bar(pos, value*1000, bottom=bottom, color=color, label=label if pos == 0 else None)
                     bottom += value*1000
-                ax.annotate(f'{r["total"]*1000:.2f} ms', (pos, r['total']*1000), xytext=(0, 6), textcoords='offset points', ha='center', fontsize=7, rotation=45)
                 ticks.append(pos)
                 labels.append('C\n' + ('HP' if coordinator(h, v) == 'HP-Laptop' else 'V'))
                 start = pos
                 for i, (comp, ops) in enumerate(zip(r['workers_comp'], r['workers_ops'])):
                     pos += 1
+                    host = 'HP-Laptop' if i < h else 'victus'
+                    if host in HOST_BACKGROUNDS:
+                        ax.axvspan(pos - .5, pos + .5, color=HOST_BACKGROUNDS[host],
+                                   alpha=HOST_BACKGROUND_ALPHA, linewidth=0, zorder=0)
                     ax.bar(pos, comp*1000, color='#38945b', label='W: calcul' if pos == 1 else None)
                     ax.bar(pos, ops*1000, bottom=comp*1000, color='#7bc1ac', label='W: alocare/transfer' if pos == 1 else None)
                     ticks.append(pos)
@@ -268,7 +277,10 @@ def figures_and_report(raw):
             ax.grid(axis='y', alpha=.25)
         axes[0].set_ylabel('Timp (ms)')
         handles, labels = axes[0].get_legend_handles_labels()
-        fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(.5, .95), ncol=6)
+        for host, color in HOST_BACKGROUNDS.items():
+            handles.append(Patch(facecolor=color, alpha=HOST_BACKGROUND_ALPHA, edgecolor='none'))
+            labels.append(f'Fundal: {host}')
+        fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(.5, .95), ncol=7)
         fig.suptitle(f'{op} | {RESOLUTION[0]}', y=.995)
         fig.tight_layout(rect=(0, .12, 1, .86))
         fig.savefig(OUT / f'partition_strategies_{slug}.png', dpi=160, bbox_inches='tight')
@@ -281,7 +293,7 @@ def figures_and_report(raw):
     report += ['## Verificare și interpretare', '',
         f'Cea mai lentă repetare a durat {peak["total"]*1000:.3f} ms, pentru {peak["op"]}, {peak["mode"]}, cu {peak["hp"]} workeri HP-Laptop și {peak["victus"]} workeri Victus. Cea mai mare abatere standard relativă este {worst["std"]/worst["total"]*100:.1f}%, pentru {worst["op"]}, {worst["mode"]}, HP={worst["hp"]}, Victus={worst["victus"]}. Am păstrat toate repetările. Acest pilot verifică matricea și graficele, dar variația limitează concluziile despre ordinea strategiilor. Nu am măsurat separat rețeaua sau încărcarea de fond, deci nu pot atribui variația unei singure cauze.', '',
         f'Toate cele {len(rows)} de configurații au rezultate identice pixel cu pixel cu referința secvențială în prima repetare.', '',
-        'Barele C și W se suprapun în timp și nu se adună. HP înseamnă HP-Laptop, iar V înseamnă Victus. Barele workerilor arată calculul și timpul instrumentat de alocare/transfer. Timpul rămas până la timpul coordonatorului nu este etichetat drept inactivitate, deoarece programul nu măsoară separat acea durată. Segmentele pack/unpack nu sunt defalcate per worker, deoarece instrumentarea oferă numai totalul coordonatorului.', '',
+        'Barele C și W se suprapun în timp și nu se adună. HP înseamnă HP-Laptop, iar V înseamnă Victus. Fundalul roșu, cu opacitate de 15%, identifică barele de pe Victus. Barele de pe HP-Laptop au fundal alb. Barele workerilor arată calculul și timpul instrumentat de alocare/transfer. Timpul rămas până la timpul coordonatorului nu este etichetat drept inactivitate, deoarece programul nu măsoară separat acea durată. Segmentele pack/unpack nu sunt defalcate per worker, deoarece instrumentarea oferă numai totalul coordonatorului.', '',
         '## Reproducere', '',
         'Scriptul separat este [benchmark_two_machines_small.py](benchmark_two_machines_small.py). Ambele calculatoare trebuie să acceseze același director și să accepte conexiuni SSH fără parolă. Rularea completă folosește comanda de mai jos. Scriptul reia configurațiile lipsă din jurnalul existent.', '',
         '```bash', 'uv run --with numpy --with matplotlib python benchmark_two_machines_small.py', '```', '',
