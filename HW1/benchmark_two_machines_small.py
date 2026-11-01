@@ -163,7 +163,7 @@ def collect():
     return load_selected_runs(path)
 
 
-def figures_and_report(raw, time_limit=None, speed_limit=None):
+def figures_and_report(raw):
     grouped = {}
     for r in raw:
         grouped.setdefault((r['op'], r['mode'], r['hp'], r['victus']), []).append(r)
@@ -190,8 +190,6 @@ def figures_and_report(raw, time_limit=None, speed_limit=None):
         writer = csv.DictWriter(f, fieldnames=list(raw[0]) + ['coordinator'])
         writer.writeheader()
         writer.writerows(dict(r, hp=0 if r['mode'] == 'seq' else r['hp'], victus=0 if r['mode'] == 'seq' else r['victus'], coordinator=coordinator(r['hp'], r['victus'])) for r in raw)
-    time_max = time_limit or max(r['total'] + r['std'] for r in rows) * 1100
-    speed_max = speed_limit or max(1, max(r['speedup'] for r in rows)) * 1.1
     report = [f'# Studiu pe două calculatoare, {RESOLUTION[0]}', '',
         f'Imaginea `test_images/sample_{RESOLUTION[0]}.ppm` are {RESOLUTION[1]}×{RESOLUTION[2]} pixeli. Rezultatele sunt separate de studiile anterioare.', '',
         '## Metodologie', '',
@@ -200,10 +198,19 @@ def figures_and_report(raw, time_limit=None, speed_limit=None):
         'Rangul 0 rulează pe HP-Laptop pentru testele exclusiv pe HP-Laptop și pe Victus pentru celelalte teste. Graficul HP-Laptop include 1 proces secvențial, 2 procese cu un worker și 3 procese cu doi workeri. Rangurile 1 până la numărul de workeri HP-Laptop rulează pe HP-Laptop, iar workerii rămași rulează pe Victus. Limitele de 2 și 8 se referă la workeri, fără coordonator.', '',
         'Speedup = media timpului secvențial / media timpului paralel. Referința secvențială rulează pe HP-Laptop pentru testele exclusiv pe HP-Laptop și pe Victus pentru celelalte teste. Eficiența este speedup / numărul total de workeri. Pe calculatoare diferite, acest raport depinde de performanța referinței secvențiale.', '',
         'Timpii provin din instrumentarea C și exclud lansarea MPI, citirea imaginii, scrierea rezultatului și verificarea pixelilor. Prima repetare a fiecărei configurații salvează rezultatul pentru comparație integrală cu referința secvențială. Celelalte repetări folosesc ieșirea NONE. Timpii sunt afișați ca medie și abatere standard. Trei repetări oferă o verificare pilot, cu precizie limitată pentru operațiile scurte.', '',
-        'Toate graficele de timp folosesc aceeași limită verticală, inclusiv graficele strategiilor. Graficele de speedup folosesc o limită comună. Valorile extreme ridică limita verticală, astfel că unele curbe și bare sunt aproape de zero pe această scară. Tabelele păstrează valorile numerice. Datele brute includ timpii fiecărui worker, distribuția pe calculatoare și datele necesare eficienței. Această rulare măsoară numai imaginea de 64MP. CSV-urile păstrează eficiența și pot fi comparate cu rezultatele anterioare la alte rezoluții.', '']
+        'În fiecare imagine, cele patru grafice folosesc aceeași scară verticală, cu limita inferioară zero. Limita superioară depinde de datele afișate în imagine, inclusiv benzile de abatere standard și înălțimea totală a barelor suprapuse, cu spațiu liber deasupra. Imaginile diferite pot avea limite superioare diferite. Tabelele păstrează valorile numerice. Datele brute includ timpii fiecărui worker, distribuția pe calculatoare și datele necesare eficienței. Această rulare măsoară numai imaginea de 64MP. CSV-urile păstrează eficiența și pot fi comparate cu rezultatele anterioare la alte rezoluții.', '']
     for op in OPS:
         slug = op.replace(',', '_')
         subset = [r for r in rows if r['op'] == op and r['mode'] != 'seq']
+        operation_rows = [r for r in rows if r['op'] == op]
+        time_max = max(r['total'] + (r['std'] if r['mode'] != 'seq' or r['coordinator'] == 'HP-Laptop' else 0)
+                       for r in operation_rows) * 1100
+        speed_max = max(1, max(r['speedup'] for r in subset)) * 1.1
+        profile_rows = [r for r in subset if (r['hp'], r['victus']) in PROFILES]
+        # Size the strategy image from the stacks actually drawn in its four panels.
+        strategy_max = max(max(r['total'], r['pack'] + r['send'] + r['wait'],
+                               max((comp + ops for comp, ops in zip(r['workers_comp'], r['workers_ops'])), default=0))
+                           for r in profile_rows) * 1150
         report += [f'## {op}', '']
         for metric, filename, ylabel, limit in [('total', 'execution_time', 'Timp total (ms)', time_max), ('speedup', 'speedup', 'Speedup', speed_max)]:
             fig, axes = plt.subplots(1, 4, figsize=(22, 5), sharey=True)
@@ -257,7 +264,7 @@ def figures_and_report(raw, time_limit=None, speed_limit=None):
                 ax.text((start+pos)/2, -.29, mode, ha='center', transform=ax.get_xaxis_transform(), fontsize=10)
                 pos += 2
             ax.set_xticks(ticks, labels, rotation=90, fontsize=7)
-            ax.set(title=f'HP-Laptop: {h} workeri | Victus: {v} workeri', ylim=(0, time_max))
+            ax.set(title=f'HP-Laptop: {h} workeri | Victus: {v} workeri', ylim=(0, strategy_max))
             ax.grid(axis='y', alpha=.25)
         axes[0].set_ylabel('Timp (ms)')
         handles, labels = axes[0].get_legend_handles_labels()
@@ -298,22 +305,6 @@ def validate_records(raw, complete=True):
         raise RuntimeError(f'Incomplete or incompatible data for {RESOLUTION[0]}')
 
 
-def common_limits(datasets):
-    time_limit = 0
-    speed_limit = 1
-    for raw in datasets:
-        grouped = {}
-        for r in raw:
-            grouped.setdefault((r['op'], r['mode'], r['hp'], r['victus']), []).append(r['total'])
-        means = {key: statistics.mean(values) for key, values in grouped.items()}
-        for (op, mode, h, v), values in grouped.items():
-            mean = statistics.mean(values)
-            time_limit = max(time_limit, mean + statistics.stdev(values))
-            baseline = means[op, 'seq', 1 if coordinator(h, v) == 'HP-Laptop' else 0, 0]
-            speed_limit = max(speed_limit, baseline / mean)
-    return time_limit * 1100, speed_limit * 1.1
-
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--plot-only', action='store_true', help='Regenerate reports from saved measurements.')
@@ -333,7 +324,6 @@ if __name__ == '__main__':
         validate_records(raw)
         datasets.append(raw)
     print('Generating reports and figures...', flush=True)
-    limits = common_limits(datasets)
     for RESOLUTION, raw in zip(RESOLUTIONS, datasets):
         OUT = OUTPUT_ROOT / RESOLUTION[0]
-        figures_and_report(raw, *limits)
+        figures_and_report(raw)
