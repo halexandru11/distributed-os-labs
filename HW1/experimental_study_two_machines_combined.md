@@ -4,7 +4,7 @@ Comparăm `1.5MP`, `4MP`, `8MP` și `64MP`. La 64MP este măsurat numai pipeline
 
 ## Ajută al doilea calculator?
 
-![Efectul adăugării HP la Victus](benchmark_two_machines/combined/adding_hp.png)
+![Efectul adăugării HP la Victus](figures/benchmark_two_machines/combined/adding_hp.png)
 
 `dynamic_1d`: **8 workeri Victus → 8 Victus + 2 HP**. Roșu = mai lent; verde = mai rapid. `+100% timp` înseamnă durată dublă. **Adăugarea HP crește timpul mediu în toate cazurile afișate.**
 
@@ -27,19 +27,19 @@ Conexiune Ethernet; HP: i7-7500U, 2 nuclee/4 fire; Victus: i5-12500H, 16 fire. O
 
 ### Timp total
 
-![Timp total, grayscale](benchmark_two_machines/combined/execution_time_grayscale.png)
+![Timp total, grayscale](figures/benchmark_two_machines/combined/execution_time_grayscale.png)
 
 Panouri: **2 HP**, **8 V**, **2 HP + 4 V**, **2 HP + 8 V**. X = rezoluție; Y = timp (ms). **Mai jos = mai rapid.**
 
 ### Speedup
 
-![Speedup pe Victus, grayscale](benchmark_two_machines/combined/speedup_grayscale.png)
+![Speedup pe Victus, grayscale](figures/benchmark_two_machines/combined/speedup_grayscale.png)
 
 Panouri: **1.5MP, 4MP, 8MP, 64MP**. X = workeri Victus (1–8); Y = speedup față de secvențialul Victus. **Mai sus = mai bine; sub 1× = mai lent decât secvențialul.**
 
 ### Compararea strategiilor
 
-![Strategii, grayscale](benchmark_two_machines/combined/partition_strategies_grayscale.png)
+![Strategii, grayscale](figures/benchmark_two_machines/combined/partition_strategies_grayscale.png)
 
 Aceleași panouri de rezoluție. În fiecare: **8 V** în stânga, **8 V + 2 HP** în dreapta. Barele arată timpul (ms). **Mai scurt = mai rapid.**
 
@@ -59,19 +59,19 @@ Câștig modest; strategia cu minimul observat diferă între rezoluții.
 
 ### Timp total
 
-![Timp total, blur](benchmark_two_machines/combined/execution_time_blur.png)
+![Timp total, blur](figures/benchmark_two_machines/combined/execution_time_blur.png)
 
 Panouri: **2 HP**, **8 V**, **2 HP + 4 V**, **2 HP + 8 V**. X = rezoluție; Y = timp (ms). **Mai jos = mai rapid.**
 
 ### Speedup
 
-![Speedup pe Victus, blur](benchmark_two_machines/combined/speedup_blur.png)
+![Speedup pe Victus, blur](figures/benchmark_two_machines/combined/speedup_blur.png)
 
 Panouri: **1.5MP, 4MP, 8MP, 64MP**. X = workeri Victus (1–8); Y = speedup față de secvențialul Victus. **Mai sus = mai bine; sub 1× = mai lent decât secvențialul.**
 
 ### Compararea strategiilor
 
-![Strategii, blur](benchmark_two_machines/combined/partition_strategies_blur.png)
+![Strategii, blur](figures/benchmark_two_machines/combined/partition_strategies_blur.png)
 
 Aceleași panouri de rezoluție. În fiecare: **8 V** în stânga, **8 V + 2 HP** în dreapta. Barele arată timpul (ms). **Mai scurt = mai rapid.**
 
@@ -91,19 +91,19 @@ La 8 workeri Victus, `dynamic_1d` crește de la 4.93× la 6.76× între 1.5MP ș
 
 ### Timp total
 
-![Timp total, rotate90](benchmark_two_machines/combined/execution_time_rotate90.png)
+![Timp total, rotate90](figures/benchmark_two_machines/combined/execution_time_rotate90.png)
 
 Panouri: **2 HP**, **8 V**, **2 HP + 4 V**, **2 HP + 8 V**. X = rezoluție; Y = timp (ms). **Mai jos = mai rapid.**
 
 ### Speedup
 
-![Speedup pe Victus, rotate90](benchmark_two_machines/combined/speedup_rotate90.png)
+![Speedup pe Victus, rotate90](figures/benchmark_two_machines/combined/speedup_rotate90.png)
 
 Panouri: **1.5MP, 4MP, 8MP, 64MP**. X = workeri Victus (1–8); Y = speedup față de secvențialul Victus. **Mai sus = mai bine; sub 1× = mai lent decât secvențialul.**
 
 ### Compararea strategiilor
 
-![Strategii, rotate90](benchmark_two_machines/combined/partition_strategies_rotate90.png)
+![Strategii, rotate90](figures/benchmark_two_machines/combined/partition_strategies_rotate90.png)
 
 Aceleași panouri de rezoluție. În fiecare: **8 V** în stânga, **8 V + 2 HP** în dreapta. Barele arată timpul (ms). **Mai scurt = mai rapid.**
 
@@ -123,19 +123,19 @@ Minimele folosesc 7, 3 și 5 workeri Victus; 8 workeri nu oferă timpul minim.
 
 ### Timp total
 
-![Timp total, grayscale,blur,flip](benchmark_two_machines/combined/execution_time_grayscale_blur_flip.png)
+![Timp total, grayscale,blur,flip](figures/benchmark_two_machines/combined/execution_time_grayscale_blur_flip.png)
 
 Panouri: **2 HP**, **8 V**, **2 HP + 4 V**, **2 HP + 8 V**. X = rezoluție; Y = timp (ms). **Mai jos = mai rapid.**
 
 ### Speedup
 
-![Speedup pe Victus, grayscale,blur,flip](benchmark_two_machines/combined/speedup_grayscale_blur_flip.png)
+![Speedup pe Victus, grayscale,blur,flip](figures/benchmark_two_machines/combined/speedup_grayscale_blur_flip.png)
 
 Panouri: **1.5MP, 4MP, 8MP, 64MP**. X = workeri Victus (1–8); Y = speedup față de secvențialul Victus. **Mai sus = mai bine; sub 1× = mai lent decât secvențialul.**
 
 ### Compararea strategiilor
 
-![Strategii, grayscale,blur,flip](benchmark_two_machines/combined/partition_strategies_grayscale_blur_flip.png)
+![Strategii, grayscale,blur,flip](figures/benchmark_two_machines/combined/partition_strategies_grayscale_blur_flip.png)
 
 Aceleași panouri de rezoluție. În fiecare: **8 V** în stânga, **8 V + 2 HP** în dreapta. Barele arată timpul (ms). **Mai scurt = mai rapid.**
 

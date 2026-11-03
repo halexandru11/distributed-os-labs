@@ -1,208 +1,23 @@
-# MPI Image Processing — Command-Line Execution Guide
+# HW1 — Procesarea imaginilor cu MPI
 
-Toate comenzile de mai jos folosesc calea directă către fișiere, fără variabile de mediu (`$INPUT`).
+Programul C procesează imagini PPM (P6), secvențial sau în paralel, pe un calculator ori pe clusterul HP-Laptop + Victus. Comparăm timpul de execuție și speedup-ul pentru trei strategii de partiționare.
 
----
+- **Operații:** `grayscale`, `invert`, `sepia`, `blur` (implicit 9×9, configurabil prin `blur:N`), `flip` și `rotate90`. Operațiile se pot înlănțui într-un pipeline.
+- **Strategii:** `static_1d` (benzi orizontale), `static_2d` (grilă de blocuri), `dynamic_1d` (taskuri distribuite dinamic); `seq` oferă referința secvențială.
+- **Procese:** rank 0 coordonează; în modurile paralele, celelalte `np - 1` procese sunt workeri.
 
-## 1. Compilare
+## Documentație
 
-```bash
-cd /home/mpiuser/sod/nfs-cloud/HW1
-mpicc -O3 -Wall mpi_image_proc.c -o mpi_image_proc
-```
+- [USAGE.md](USAGE.md) — cerințe, compilare, exemple și rularea benchmark-urilor.
+- [EXPERIMENTS.md](EXPERIMENTS.md) — metodologie, rezultate, limite și legături către rapoartele detaliate.
+- [Vizualizarea partiționării](visualizarea_strategiilor_de_partitionare.md) — exemple pentru 1–10 workeri.
 
----
+## Fișiere
 
-## 2. Operații Individuale
+- [mpi_image_proc.c](mpi_image_proc.c): implementarea MPI.
+- `benchmark*.py` și `test_benchmark*.py`: măsurători, generarea rapoartelor și teste.
+- [figures/](figures/): grafice grupate după experiment și rezoluție.
+- `benchmark_two_machines/` și `benchmark_small_two_machines*/`: rezultate CSV, jurnale și metadate.
+- `test_images/`: imagini PPM de intrare și exemple de ieșire.
 
-### A. Categoria 1: Modificări de Culoare (In-Place)
-* **Grayscale (Static 1D, 4 procese: 1 Coordonator + 3 Workeri):**
-  ```bash
-  mpirun --oversubscribe -np 4 ./mpi_image_proc test_images/sample_1.5MP.ppm test_images/out_grayscale.ppm static_1d grayscale
-  ```
-* **Color Inversion (Dynamic Load Balancing, 6 procese):**
-  ```bash
-  mpirun --oversubscribe -np 6 ./mpi_image_proc test_images/sample_1.5MP.ppm test_images/out_grayscale.ppm dynamic_1d invert
-  ```
-* **Sepia Filter (Secvențial, 1 proces):**
-  ```bash
-  mpirun -np 1 ./mpi_image_proc test_images/sample_1.5MP.ppm test_images/out_grayscale.ppm seq sepia
-  ```
-
-### B. Categoria 2: Convoluții pe Vecinătate
-
-`blur` folosește implicit 9x9; `blur:N` selectează un nucleu NxN, cu N pozitiv și impar.
-
-* **9x9 Box Blur (Static 1D, 4 procese):**
-  ```bash
-  mpirun --oversubscribe -np 4 ./mpi_image_proc test_images/sample_1.5MP.ppm test_images/out_blur.ppm static_1d blur
-  ```
-* **13x13 Box Blur (Static 2D Grid, 5 procese -> grilă 2x2):**
-  ```bash
-  mpirun --oversubscribe -np 5 ./mpi_image_proc test_images/sample_1.5MP.ppm test_images/out_blur.ppm static_2d blur:13
-  ```
-* **5x5 Box Blur (Dynamic Task Pool, 4 procese):**
-  ```bash
-  mpirun --oversubscribe -np 4 ./mpi_image_proc test_images/sample_1.5MP.ppm test_images/out_blur.ppm dynamic_1d blur:5
-  ```
-
-### C. Categoria 3: Mutare Pixeli & Schimbare Dimensiuni
-* **Horizontal Flip (Static 1D, 4 procese):**
-  ```bash
-  mpirun --oversubscribe -np 4 ./mpi_image_proc test_images/sample_1.5MP.ppm test_images/out_rotate90.ppm static_1d flip
-  ```
-* **Rotate 90 deg Clockwise (W x H -> H x W, Dynamic 1D, 4 procese):**
-  ```bash
-  mpirun --oversubscribe -np 4 ./mpi_image_proc test_images/sample_1.5MP.ppm test_images/out_rotate90.ppm dynamic_1d rotate90
-  ```
-
----
-
-## 3. Pipeline Multi-Stage (Operații Înseriate)
-
-* **Grayscale -> Blur -> Flip (Dynamic 1D, 4 procese):**
-  ```bash
-  mpirun --oversubscribe -np 4 ./mpi_image_proc test_images/sample_1.5MP.ppm test_images/out_grayscale_blur_flip.ppm dynamic_1d grayscale,blur:13,flip
-  ```
-* **Grayscale -> Rotate 90 deg CW -> Blur (Static 1D, 4 procese):**
-  ```bash
-  mpirun --oversubscribe -np 4 ./mpi_image_proc test_images/sample_1.5MP.ppm test_images/out_grayscale_blur_flip.ppm static_1d grayscale,rotate90,blur:5
-  ```
-* **Double Blur -> Invert (Dynamic 1D, 6 procese):**
-  ```bash
-  mpirun --oversubscribe -np 6 ./mpi_image_proc test_images/sample_1.5MP.ppm test_images/out_blur.ppm dynamic_1d blur:13,blur:5,invert
-  ```
-
-* Blur cu dimensiuni diferite și un blur implicit de 9x9 la final:
-
-  ```bash
-  mpirun --oversubscribe -np 5 ./mpi_image_proc test_images/sample_1.5MP.ppm output.ppm static_2d 'blur:13,grayscale,blur:5,blur:21,blur'
-  ```
-
----
-
-## 4. Mod Benchmark (Fără Scriere pe Disc)
-
-Trimițând ```NONE``` ca fișier de ieșire, programul măsoară strict calculul și comunicația MPI:
-
-```bash
-mpirun --oversubscribe -np 4 ./mpi_image_proc test_images/sample_1.5MP.ppm NONE dynamic_1d blur:13
-```
-
----
-
-## 5. Rulare pe Cluster (Două Laptopuri)
-
-```bash
-mpirun --oversubscribe --host victus:4,HP-Laptop:4 ./mpi_image_proc test_images/sample_1.5MP.ppm test_images/out_grayscale_blur_flip.ppm dynamic_1d grayscale,blur:13,flip
-```
-
-
-## 6. Raportul benchmark
-
-Cu `uv` instalat, rulează suita de măsurători și generează raportul:
-
-```bash
-uv run --with numpy --with matplotlib benchmark.py
-```
-
-`uv` instalează automat dependențele Python într-un mediu izolat.
-
-Pentru cluster:
-
-```bash
-uv run --with numpy --with matplotlib benchmark.py --hosts victus:4,HP-Laptop:4
-```
-
-Programul necesită `mpicc` și `mpirun` și salvează rezultatele în
-`benchmark_results.csv`. Raportul [experimental_study.md](experimental_study.md)
-conține tabele și imagini PNG din `benchmark_figures/`. Include raportul și
-acest director în commit pentru ca GitHub să afișeze graficele.
-
-Suita folosește aceeași matrice pentru grayscale, blur, rotate90 și pipeline:
-
-- Pe imaginea de 8MP, fiecare strategie paralelă rulează cu `np=2,3,4,5,6,8,9`.
-- La `np=5`, fiecare strategie rulează pe imagini de 256×256, 1600×900,
-  2400×1600 și 3840×2160 pixeli.
-- Fiecare pereche imagine/operație are o referință secvențială.
-
-Configurațiile comune sunt măsurate o singură dată. Cele 136 de configurații
-rulează de cinci ori fiecare, în total 680 de rulări MPI. `static_2d` folosește
-o grilă 2×2 la `np=5` și 4×2 la `np=9`.
-
-`benchmark_runs.csv` păstrează timpii fiecărei repetări în secunde.
-`benchmark_results.csv` conține mediile, abaterea standard a timpului total,
-speedup-ul, eficiența și rezultatele verificării pixelilor. Prima repetare
-a fiecărei configurații paralele este comparată integral cu referința
-secvențială. Scrierea imaginilor și compararea pixelilor nu intră în timpii
-măsurați. Raportul semnalează diferențele, iar programul încheie cu eroare
-dacă găsește rezultate incorecte.
-
-Raportul grupează graficele după întrebarea analizată. Tabelele complete
-sunt în acordeoane pentru fiecare rezoluție. Timpii sunt afișați în ms,
-ca medie ± abatere standard pentru timpul total. Concluziile provin din
-măsurători; nu presupun că o anumită strategie câștigă întotdeauna.
-
-În CSV, `avg_comm_s` este media timpului măsurat în apelurile MPI ale
-coordonatorului, inclusiv așteptarea workerilor. Acest timp se suprapune cu
-calculul workerilor, deci coloanele de timp nu se adună pentru a obține
-timpul total. `avg_pack_s` include împachetarea, despachetarea și alocarea
-bufferelor temporare. Feliile care ocupă întreaga lățime se transmit direct
-și pot avea `avg_pack_s` egal cu zero.
-
-Verificările generatorului se rulează astfel:
-
-```bash
-uv run --with numpy --with matplotlib python -m unittest -v test_benchmark.py
-```
-
-Graficul strategiilor are două coloane pentru fiecare strategie. Coloana C
-arată timpul coordonatorului în trei segmente: pack/unpack cu alocările
-asociate, alte operații locale și comunicație și așteptare MPI. Restul local
-se calculează ca `avg_total_s - avg_comm_s - avg_pack_s`; include pregătirea
-și planificarea taskurilor, administrarea memoriei din afara pack/unpack și
-costul instrumentării. Transmiterea și colectarea prin apeluri MPI intră în
-segmentul MPI. Cele trei segmente formează timpul total, în limita preciziei
-măsurătorilor.
-Coloana W arată media maximului timpului cumulat de calcul pe un worker
-din fiecare rulare. Nu include timpii de așteptare și transfer ai workerului.
-Coloanele C și W se suprapun în timp și nu se adună.
-
-## Benchmark pe două calculatoare, 1.5MP, 4MP și 8MP
-
-Scriptul `benchmark_two_machines_small.py` măsoară grayscale, blur 9×9,
-rotate90 și pipeline-ul grayscale,blur,flip la toate cele trei rezoluții.
-Coordonatorul rulează pe HP-Laptop pentru testele exclusiv pe HP-Laptop și
-pe Victus pentru testele Victus și cele mixte. Limitele sunt 2 workeri pe
-HP-Laptop și 8 pe Victus, fără coordonator. Graficul HP-Laptop include
-1 proces secvențial, 2 procese cu un worker și 3 procese cu doi workeri.
-
-Din directorul `HW1`, cu ambele calculatoare accesibile prin SSH și cu același
-director disponibil pe ambele, rulează:
-
-```bash
-uv run --with numpy --with matplotlib python benchmark_two_machines_small.py
-```
-
-Sunt 320 de configurații pentru fiecare rezoluție, cu câte 3 repetări,
-în total 2.880 de rulări măsurate. Programul afișează numărul de rulări
-terminate, timpul scurs și ETA. Estimarea folosește durata rulărilor din
-sesiunea curentă, inclusiv lansarea MPI, și se actualizează o dată pe secundă
-în timpul unui job. ETA este aproximativă, deoarece operațiile și rezoluțiile
-au durate diferite. Generarea rapoartelor urmează după măsurători.
-
-Scriptul compilează programul MPI și reia măsurătorile lipsă din jurnal.
-Datele și figurile sunt separate în `benchmark_two_machines/1.5MP/`,
-`benchmark_two_machines/4MP/` și `benchmark_two_machines/8MP/`.
-Rapoartele sunt `experimental_study_two_machines_1.5MP.md`,
-`experimental_study_two_machines_4MP.md` și
-`experimental_study_two_machines_8MP.md`. Fiecare rezoluție are 12 figuri,
-cu patru panouri fiecare. Graficele de timp folosesc aceeași limită verticală
-pentru toate rezoluțiile. CSV-urile păstrează și eficiența, plus timpii pe
-worker, pentru analize ulterioare.
-
-Pentru regenerarea rapoartelor și figurilor după o rulare completă:
-
-```bash
-uv run --with numpy --with matplotlib python benchmark_two_machines_small.py --plot-only
-```
+[Toate temele](../README.md)

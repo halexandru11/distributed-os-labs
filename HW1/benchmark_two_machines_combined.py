@@ -13,6 +13,7 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parent
 OUT = ROOT / 'benchmark_two_machines' / 'combined'
+FIGURES = ROOT / 'figures' / 'benchmark_two_machines' / 'combined'
 REPORT = ROOT / 'experimental_study_two_machines_combined.md'
 SIZES = [('1.5MP', 1600, 900), ('4MP', 2400, 1600),
          ('8MP', 3840, 2160), ('64MP', 10667, 6000)]
@@ -85,7 +86,7 @@ def finish(fig, axes, filename, ylabel):
     handles, labels = axes[0].get_legend_handles_labels()
     fig.legend(handles, labels, loc='lower center', ncol=4, frameon=False)
     fig.tight_layout(rect=(0, .08, 1, .94))
-    fig.savefig(OUT / filename, dpi=160, bbox_inches='tight')
+    fig.savefig(FIGURES / filename, dpi=160, bbox_inches='tight')
     plt.close(fig)
 
 
@@ -134,7 +135,7 @@ def figures(op, sizes):
 
 
 def image(name, alt):
-    return f'![{alt}](benchmark_two_machines/combined/{name})'
+    return f'![{alt}](figures/benchmark_two_machines/combined/{name})'
 
 
 def table(headers, rows):
@@ -150,6 +151,7 @@ def time_cell(row):
 def main():
     load()
     OUT.mkdir(parents=True, exist_ok=True)
+    FIGURES.mkdir(parents=True, exist_ok=True)
     with (OUT / 'results.csv').open('w') as f:
         writer = csv.DictWriter(f, fieldnames=list(ROWS[0]))
         writer.writeheader()
@@ -178,7 +180,7 @@ def main():
     ax.grid(axis='x', alpha=.2)
     ax.set_axisbelow(True)
     fig.tight_layout()
-    fig.savefig(OUT / 'adding_hp.png', dpi=160, bbox_inches='tight')
+    fig.savefig(FIGURES / 'adding_hp.png', dpi=160, bbox_inches='tight')
     plt.close(fig)
     report = ['# Studiu pe două calculatoare, comparație între rezoluții', '',
         'Comparăm `1.5MP`, `4MP`, `8MP` și `64MP`. La 64MP este măsurat numai pipeline-ul `grayscale,blur,flip`.', '',
@@ -245,7 +247,7 @@ def main():
                    f'[rulări](benchmark_two_machines/{size}/runs.csv), '
                    f'[metadata](benchmark_two_machines/{size}/metadata.json).']
     REPORT.write_text('\n'.join(report) + '\n')
-    print(f'Validated {len(ROWS)} configurations; wrote {REPORT.name} and 13 PNGs in {OUT.relative_to(ROOT)}')
+    print(f'Validated {len(ROWS)} configurations; wrote {REPORT.name} and 13 PNGs in {FIGURES.relative_to(ROOT)}')
 
 
 if __name__ == '__main__':
