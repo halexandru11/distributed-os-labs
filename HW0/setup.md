@@ -155,7 +155,7 @@ To resolve this boot delay on `victus`, systemd automount options with a low tim
 
 ## 7. MPI Test Program & Compilation
 
-Tested the laboratory [hello.c](`ex1b_helloworld.c`) and [hello-send-recv.c](ex2_helloworld_send+recv.c) inside the shared directory:
+Tested the laboratory [hello.c](hello.c) and [hello-send-recv.c](hello-send-recv.c) inside the shared directory:
 
 Compiled using the Open MPI wrapper `mpicc`:
 ```bash

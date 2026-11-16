@@ -54,7 +54,7 @@ Am măsurat `320` de configurații, cu câte `3` repetări, în total `960` de r
 
 ### Timp total
 
-![Timp total (ms), grayscale](benchmark_two_machines/1.5MP/execution_time_grayscale.png)
+![Timp total (ms), grayscale](figures/benchmark_two_machines/1.5MP/execution_time_grayscale.png)
 
 - **Cel mai mic timp paralel mediu este `4.485 ms`, cu `dynamic_1d`, fără workeri HP-Laptop și cu `6` workeri Victus.** Pentru `dynamic_1d` pe Victus, timpul crește apoi la `5.229 ms` cu `7` workeri și la `5.653 ms` cu `8`.
 
@@ -62,7 +62,7 @@ Am măsurat `320` de configurații, cu câte `3` repetări, în total `960` de r
 
 ### Speedup
 
-![Speedup, grayscale](benchmark_two_machines/1.5MP/speedup_grayscale.png)
+![Speedup, grayscale](figures/benchmark_two_machines/1.5MP/speedup_grayscale.png)
 
 - **Pe Victus, speedup-ul maxim măsurat este `1.28`, față de referința secvențială de `5.743 ms`.** Câștigul este modest chiar înaintea scăderii de la `6` la `8` workeri.
 
@@ -72,7 +72,7 @@ Am măsurat `320` de configurații, cu câte `3` repetări, în total `960` de r
 
 ### Compararea strategiilor
 
-![Strategii, grayscale](benchmark_two_machines/1.5MP/partition_strategies_grayscale.png)
+![Strategii, grayscale](figures/benchmark_two_machines/1.5MP/partition_strategies_grayscale.png)
 
 - Barele compară patru configurații fixe, cu `2` HP și `0` Victus, `0` HP și `4` Victus, `2` HP și `4` Victus, respectiv `2` HP și `8` Victus. C reprezintă coordonatorul, W un worker, HP înseamnă HP-Laptop, iar V înseamnă Victus.
 
@@ -84,7 +84,7 @@ Am măsurat `320` de configurații, cu câte `3` repetări, în total `960` de r
 
 ### Timp total
 
-![Timp total (ms), blur](benchmark_two_machines/1.5MP/execution_time_blur.png)
+![Timp total (ms), blur](figures/benchmark_two_machines/1.5MP/execution_time_blur.png)
 
 - **Cel mai mic timp paralel mediu este `20.527 ms`, cu `dynamic_1d` și `7` workeri numai pe Victus.** Cu `8` workeri, media crește la `21.831 ms`, iar abaterea standard crește de la `2.113 ms` la `8.957 ms`.
 
@@ -94,7 +94,7 @@ Am măsurat `320` de configurații, cu câte `3` repetări, în total `960` de r
 
 ### Speedup
 
-![Speedup, blur](benchmark_two_machines/1.5MP/speedup_blur.png)
+![Speedup, blur](figures/benchmark_two_machines/1.5MP/speedup_blur.png)
 
 - **De la `7` la `8` workeri Victus, speedup-ul scade pentru toate strategiile, de la `5.16` la `4.89` pentru `static_1d`, de la `4.93` la `4.03` pentru `static_2d` și de la `5.24` la `4.93` pentru `dynamic_1d`.** Toate folosesc aceeași referință secvențială de `107.532 ms`.
 
@@ -108,7 +108,7 @@ Am măsurat `320` de configurații, cu câte `3` repetări, în total `960` de r
 
 ### Compararea strategiilor
 
-![Strategii, blur](benchmark_two_machines/1.5MP/partition_strategies_blur.png)
+![Strategii, blur](figures/benchmark_two_machines/1.5MP/partition_strategies_blur.png)
 
 - **În configurațiile mixte afișate, `dynamic_1d` are cel mai mic timp mediu, `56.813 ms` cu `2` HP și `4` Victus, respectiv `44.314 ms` cu `2` HP și `8` Victus.** Redistribuirea sarcinilor către primul worker disponibil poate reduce efectul diferențelor de viteză dintre calculatoare.
 
@@ -118,7 +118,7 @@ Am măsurat `320` de configurații, cu câte `3` repetări, în total `960` de r
 
 ### Timp total
 
-![Timp total (ms), rotate90](benchmark_two_machines/1.5MP/execution_time_rotate90.png)
+![Timp total (ms), rotate90](figures/benchmark_two_machines/1.5MP/execution_time_rotate90.png)
 
 - **Cel mai mic timp paralel mediu este `4.557 ms`, cu `dynamic_1d` și `7` workeri numai pe Victus.** La `8` workeri, timpul crește la `5.405 ms`.
 
@@ -126,7 +126,7 @@ Am măsurat `320` de configurații, cu câte `3` repetări, în total `960` de r
 
 ### Speedup
 
-![Speedup, rotate90](benchmark_two_machines/1.5MP/speedup_rotate90.png)
+![Speedup, rotate90](figures/benchmark_two_machines/1.5MP/speedup_rotate90.png)
 
 - **Pentru `dynamic_1d` pe Victus, speedup-ul scade de la `1.56` cu `7` workeri la `1.31` cu `8`, față de referința de `7.098 ms`.** Rotirea are puțin calcul per pixel.
 
@@ -136,7 +136,7 @@ Am măsurat `320` de configurații, cu câte `3` repetări, în total `960` de r
 
 ### Compararea strategiilor
 
-![Strategii, rotate90](benchmark_two_machines/1.5MP/partition_strategies_rotate90.png)
+![Strategii, rotate90](figures/benchmark_two_machines/1.5MP/partition_strategies_rotate90.png)
 
 - **Configurația cu `4` workeri numai pe Victus ajunge la `5.186 ms` cu `dynamic_1d`.** Cea cu `2` HP și `4` Victus are cel mai mic timp de `48.179 ms`, cu `static_1d`.
 
@@ -146,7 +146,7 @@ Am măsurat `320` de configurații, cu câte `3` repetări, în total `960` de r
 
 ### Timp total
 
-![Timp total (ms), grayscale,blur,flip](benchmark_two_machines/1.5MP/execution_time_grayscale_blur_flip.png)
+![Timp total (ms), grayscale,blur,flip](figures/benchmark_two_machines/1.5MP/execution_time_grayscale_blur_flip.png)
 
 - **Cel mai mic timp paralel mediu este `23.181 ms`, cu `dynamic_1d` și `8` workeri numai pe Victus.** Configurația mixtă `dynamic_1d` cu `2` HP și `8` Victus are cea mai mare variație relativă din studiu, `78.5%`.
 
@@ -154,7 +154,7 @@ Am măsurat `320` de configurații, cu câte `3` repetări, în total `960` de r
 
 ### Speedup
 
-![Speedup, grayscale,blur,flip](benchmark_two_machines/1.5MP/speedup_grayscale_blur_flip.png)
+![Speedup, grayscale,blur,flip](figures/benchmark_two_machines/1.5MP/speedup_grayscale_blur_flip.png)
 
 - **Speedup-ul maxim măsurat este `5.13`, față de referința Victus de `118.958 ms`.** Pentru `static_2d` pe Victus, speedup-ul scade de la `4.24` cu `7` workeri la `3.34` cu `8`, în timp ce `dynamic_1d` crește de la `4.39` la `5.13`.
 
@@ -164,7 +164,7 @@ Am măsurat `320` de configurații, cu câte `3` repetări, în total `960` de r
 
 ### Compararea strategiilor
 
-![Strategii, grayscale,blur,flip](benchmark_two_machines/1.5MP/partition_strategies_grayscale_blur_flip.png)
+![Strategii, grayscale,blur,flip](figures/benchmark_two_machines/1.5MP/partition_strategies_grayscale_blur_flip.png)
 
 - **În ambele configurații mixte afișate, `static_1d` are cel mai mic timp mediu, `115.475 ms` cu `2` HP și `4` Victus, respectiv `82.358 ms` cu `2` HP și `8` Victus.** Prin urmare, avantajul `dynamic_1d` pentru `blur` nu se păstrează automat pentru pipeline.
 

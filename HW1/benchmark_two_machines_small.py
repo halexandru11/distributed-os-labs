@@ -167,6 +167,8 @@ def collect():
 
 
 def figures_and_report(raw):
+    figure_dir = ROOT / 'figures' / 'benchmark_two_machines' / RESOLUTION[0]
+    figure_dir.mkdir(parents=True, exist_ok=True)
     grouped = {}
     for r in raw:
         grouped.setdefault((r['op'], r['mode'], r['hp'], r['victus']), []).append(r)
@@ -240,9 +242,9 @@ def figures_and_report(raw):
             fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(.5, .95), ncol=4)
             fig.suptitle(f'{op} | {RESOLUTION[0]}', y=.995)
             fig.tight_layout(rect=(0, 0, 1, .86))
-            fig.savefig(OUT / f'{filename}_{slug}.png', dpi=160, bbox_inches='tight')
+            fig.savefig(figure_dir / f'{filename}_{slug}.png', dpi=160, bbox_inches='tight')
             plt.close(fig)
-            report += [f'![{ylabel}, {op}](benchmark_two_machines/{RESOLUTION[0]}/{filename}_{slug}.png)', '']
+            report += [f'![{ylabel}, {op}](figures/benchmark_two_machines/{RESOLUTION[0]}/{filename}_{slug}.png)', '']
         fig, axes = plt.subplots(1, 4, figsize=(30, 7), sharey=True)
         for ax, (h, v) in zip(axes, PROFILES):
             ticks, labels = [], []
@@ -283,9 +285,9 @@ def figures_and_report(raw):
         fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(.5, .95), ncol=7)
         fig.suptitle(f'{op} | {RESOLUTION[0]}', y=.995)
         fig.tight_layout(rect=(0, .12, 1, .86))
-        fig.savefig(OUT / f'partition_strategies_{slug}.png', dpi=160, bbox_inches='tight')
+        fig.savefig(figure_dir / f'partition_strategies_{slug}.png', dpi=160, bbox_inches='tight')
         plt.close(fig)
-        report += [f'![Strategii, {op}](benchmark_two_machines/{RESOLUTION[0]}/partition_strategies_{slug}.png)', '']
+        report += [f'![Strategii, {op}](figures/benchmark_two_machines/{RESOLUTION[0]}/partition_strategies_{slug}.png)', '']
         best = min(subset, key=lambda r: r['total'])
         report += [f'Cel mai mic timp paralel mediu este {best["total"]*1000:.3f} ms, cu {best["mode"]}, {best["hp"]} workeri HP-Laptop și {best["victus"]} workeri Victus. Speedup față de referința de pe {best["coordinator"]} este {best["speedup"]:.2f}.', '']
     worst = max((r for r in rows if r['mode'] != 'seq'), key=lambda r: r['std'] / r['total'])
