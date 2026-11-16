@@ -10,7 +10,9 @@ Comparăm `1.5MP`, `4MP`, `8MP` și `64MP`. La 64MP este măsurat numai pipeline
 
 ## Metodologie
 
-Conexiune Ethernet; HP: i7-7500U, 2 nuclee/4 fire; Victus: i5-12500H, 16 fire. Open MPI 4.1.6, `mpicc -O3 -Wall`, `--bind-to none`. Coordonatorul este suplimentar și rulează pe Victus, exceptând testele exclusiv HP.
+**Dacă nu se specifică altfel, dimensiunea kernelului de blur este `9×9`, atât pentru operația separată, cât și în pipeline.**
+
+Conexiune Ethernet; HP: i7-7500U, 2 nuclee/4 fire; Victus: i5-12500H, 16 fire. Open MPI 4.1.6, `mpicc -O3 -Wall`. Coordonatorul este suplimentar și rulează pe Victus, exceptând testele exclusiv HP.
 
 - `1.5MP`: `sample_1.5MP.ppm`, 1600×900 pixeli.
 - `4MP`: `sample_4MP.ppm`, 2400×1600 pixeli.

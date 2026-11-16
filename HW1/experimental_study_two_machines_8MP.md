@@ -4,6 +4,8 @@ Imaginea `test_images/sample_8MP.ppm` are `3840×2160` pixeli. Rezultatele sunt 
 
 ## Metodologie
 
+**Dacă nu se specifică altfel, dimensiunea kernelului de blur este `9×9`, atât pentru operația separată, cât și în pipeline.**
+
 ### Conexiune și configurații
 
 Inițial, am conectat laptopurile prin Wi-Fi, dar conexiunea a fost prea lentă pentru experimente. Am trecut la o conexiune directă prin cablu Ethernet între laptopuri. **Toate măsurătorile raportate în acest studiu au fost colectate folosind conexiunea Ethernet.**
@@ -16,7 +18,7 @@ Am măsurat `320` de configurații, cu câte `3` repetări, în total `960` de r
 
 - Victus are un Intel Core i5-12500H cu `12` nuclee, dintre care `4` de performanță, P-cores, și `8` de eficiență, E-cores, și `16` fire hardware, numite și procesoare logice.
 
-- Am folosit Open MPI `4.1.6`, compilare `mpicc -O3 -Wall` și `--bind-to none`. Procesele rulează fără fixare pe nuclee.
+- Am folosit Open MPI `4.1.6` și compilare `mpicc -O3 -Wall`.
 
 - Coordonatorul este un proces suplimentar față de numărul de workeri.
 

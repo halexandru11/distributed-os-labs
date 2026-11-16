@@ -1,0 +1,68 @@
+{
+  "created_utc": "2026-11-16T12:23:44.912744+00:00",
+  "hostname": "victus",
+  "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+  "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+  "os_release": "PRETTY_NAME=\"Ubuntu 24.04.4 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.4 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nSUPPORT_URL=\"https://help.ubuntu.com/\"\nBUG_REPORT_URL=\"https://bugs.launchpad.net/ubuntu/\"\nPRIVACY_POLICY_URL=\"https://www.ubuntu.com/legal/terms-and-policies/privacy-policy\"\nUBUNTU_CODENAME=noble\nLOGO=ubuntu-logo",
+  "logical_cpus": 16,
+  "affinity_cpus": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+  ],
+  "lscpu": "{\n   \"lscpu\": [\n      {\n         \"field\": \"Architecture:\",\n         \"data\": \"x86_64\"\n      },{\n         \"field\": \"CPU op-mode(s):\",\n         \"data\": \"32-bit, 64-bit\"\n      },{\n         \"field\": \"Address sizes:\",\n         \"data\": \"39 bits physical, 48 bits virtual\"\n      },{\n         \"field\": \"Byte Order:\",\n         \"data\": \"Little Endian\"\n      },{\n         \"field\": \"CPU(s):\",\n         \"data\": \"16\"\n      },{\n         \"field\": \"On-line CPU(s) list:\",\n         \"data\": \"0-15\"\n      },{\n         \"field\": \"Vendor ID:\",\n         \"data\": \"GenuineIntel\"\n      },{\n         \"field\": \"Model name:\",\n         \"data\": \"12th Gen Intel(R) Core(TM) i5-12500H\"\n      },{\n         \"field\": \"CPU family:\",\n         \"data\": \"6\"\n      },{\n         \"field\": \"Model:\",\n         \"data\": \"154\"\n      },{\n         \"field\": \"Thread(s) per core:\",\n         \"data\": \"2\"\n      },{\n         \"field\": \"Core(s) per socket:\",\n         \"data\": \"12\"\n      },{\n         \"field\": \"Socket(s):\",\n         \"data\": \"1\"\n      },{\n         \"field\": \"Stepping:\",\n         \"data\": \"3\"\n      },{\n         \"field\": \"CPU(s) scaling MHz:\",\n         \"data\": \"52%\"\n      },{\n         \"field\": \"CPU max MHz:\",\n         \"data\": \"4500.0000\"\n      },{\n         \"field\": \"CPU min MHz:\",\n         \"data\": \"400.0000\"\n      },{\n         \"field\": \"BogoMIPS:\",\n         \"data\": \"6220.80\"\n      },{\n         \"field\": \"Flags:\",\n         \"data\": \"fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush dts acpi mmx fxsr sse sse2 ss ht tm pbe syscall nx pdpe1gb rdtscp lm constant_tsc art arch_perfmon pebs bts rep_good nopl xtopology nonstop_tsc cpuid aperfmperf tsc_known_freq pni pclmulqdq dtes64 monitor ds_cpl vmx smx est tm2 ssse3 sdbg fma cx16 xtpr pdcm pcid sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand lahf_lm abm 3dnowprefetch cpuid_fault epb ssbd ibrs ibpb stibp ibrs_enhanced tpr_shadow flexpriority ept vpid ept_ad fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid rdseed adx smap clflushopt clwb intel_pt sha_ni xsaveopt xsavec xgetbv1 xsaves split_lock_detect user_shstk avx_vnni dtherm ida arat pln pts hwp hwp_notify hwp_act_window hwp_epp hwp_pkg_req hfi vnmi umip pku ospke waitpkg gfni vaes vpclmulqdq rdpid movdiri movdir64b fsrm md_clear serialize arch_lbr ibt flush_l1d arch_capabilities\"\n      },{\n         \"field\": \"Virtualization:\",\n         \"data\": \"VT-x\"\n      },{\n         \"field\": \"L1d cache:\",\n         \"data\": \"448 KiB (12 instances)\"\n      },{\n         \"field\": \"L1i cache:\",\n         \"data\": \"640 KiB (12 instances)\"\n      },{\n         \"field\": \"L2 cache:\",\n         \"data\": \"9 MiB (6 instances)\"\n      },{\n         \"field\": \"L3 cache:\",\n         \"data\": \"18 MiB (1 instance)\"\n      },{\n         \"field\": \"NUMA node(s):\",\n         \"data\": \"1\"\n      },{\n         \"field\": \"NUMA node0 CPU(s):\",\n         \"data\": \"0-15\"\n      },{\n         \"field\": \"Vulnerability Gather data sampling:\",\n         \"data\": \"Not affected\"\n      },{\n         \"field\": \"Vulnerability Ghostwrite:\",\n         \"data\": \"Not affected\"\n      },{\n         \"field\": \"Vulnerability Indirect target selection:\",\n         \"data\": \"Not affected\"\n      },{\n         \"field\": \"Vulnerability Itlb multihit:\",\n         \"data\": \"Not affected\"\n      },{\n         \"field\": \"Vulnerability L1tf:\",\n         \"data\": \"Not affected\"\n      },{\n         \"field\": \"Vulnerability Mds:\",\n         \"data\": \"Not affected\"\n      },{\n         \"field\": \"Vulnerability Meltdown:\",\n         \"data\": \"Not affected\"\n      },{\n         \"field\": \"Vulnerability Mmio stale data:\",\n         \"data\": \"Not affected\"\n      },{\n         \"field\": \"Vulnerability Old microcode:\",\n         \"data\": \"Vulnerable\"\n      },{\n         \"field\": \"Vulnerability Reg file data sampling:\",\n         \"data\": \"Mitigation; Clear Register File\"\n      },{\n         \"field\": \"Vulnerability Retbleed:\",\n         \"data\": \"Not affected\"\n      },{\n         \"field\": \"Vulnerability Spec rstack overflow:\",\n         \"data\": \"Not affected\"\n      },{\n         \"field\": \"Vulnerability Spec store bypass:\",\n         \"data\": \"Mitigation; Speculative Store Bypass disabled via prctl\"\n      },{\n         \"field\": \"Vulnerability Spectre v1:\",\n         \"data\": \"Mitigation; usercopy/swapgs barriers and __user pointer sanitization\"\n      },{\n         \"field\": \"Vulnerability Spectre v2:\",\n         \"data\": \"Mitigation; Enhanced / Automatic IBRS; IBPB conditional; PBRSB-eIBRS SW sequence; BHI BHI_DIS_S\"\n      },{\n         \"field\": \"Vulnerability Srbds:\",\n         \"data\": \"Not affected\"\n      },{\n         \"field\": \"Vulnerability Tsa:\",\n         \"data\": \"Not affected\"\n      },{\n         \"field\": \"Vulnerability Tsx async abort:\",\n         \"data\": \"Not affected\"\n      },{\n         \"field\": \"Vulnerability Vmscape:\",\n         \"data\": \"Mitigation; IBPB before exit to userspace\"\n      }\n   ]\n}",
+  "topology": "# The following is the parsable format, which can be fed to other\n# programs. Each different item in every column has an unique ID\n# starting usually from zero.\n# CPU,Core,Socket,Online\n0,0,0,Y\n1,0,0,Y\n2,1,0,Y\n3,1,0,Y\n4,2,0,Y\n5,2,0,Y\n6,3,0,Y\n7,3,0,Y\n8,4,0,Y\n9,5,0,Y\n10,6,0,Y\n11,7,0,Y\n12,8,0,Y\n13,9,0,Y\n14,10,0,Y\n15,11,0,Y",
+  "meminfo": "MemTotal:       16022312 kB\nMemFree:         1883552 kB\nMemAvailable:    6382060 kB\nBuffers:          309460 kB\nCached:          5833020 kB\nSwapCached:       111236 kB\nActive:          5396040 kB\nInactive:        5062072 kB\nActive(anon):    3818308 kB\nInactive(anon):  2186796 kB\nActive(file):    1577732 kB\nInactive(file):  2875276 kB\nUnevictable:     1476456 kB\nMlocked:              80 kB\nSwapTotal:       4194300 kB\nSwapFree:        3348284 kB\nZswap:                 0 kB\nZswapped:              0 kB\nDirty:              8688 kB\nWriteback:             0 kB\nAnonPages:       5776532 kB\nMapped:          1583620 kB\nShmem:           2289576 kB\nKReclaimable:     620964 kB\nSlab:            1091520 kB\nSReclaimable:     620520 kB\nSUnreclaim:       471000 kB\nKernelStack:       41024 kB\nPageTables:       117408 kB\nSecPageTables:     13248 kB\nNFS_Unstable:          0 kB\nBounce:                0 kB\nWritebackTmp:          0 kB\nCommitLimit:    12205456 kB\nCommitted_AS:   31681840 kB\nVmallocTotal:   34359738367 kB\nVmallocUsed:      148484 kB\nVmallocChunk:          0 kB\nPercpu:            32512 kB\nHardwareCorrupted:     0 kB\nAnonHugePages:         0 kB\nShmemHugePages:   323584 kB\nShmemPmdMapped:        0 kB\nFileHugePages:     81920 kB\nFilePmdMapped:      6144 kB\nCmaTotal:              0 kB\nCmaFree:          807200 kB\nUnaccepted:            0 kB\nBalloon:               0 kB\nHugePages_Total:       0\nHugePages_Free:        0\nHugePages_Rsvd:        0\nHugePages_Surp:        0\nHugepagesize:       2048 kB\nHugetlb:               0 kB\nDirectMap4k:     3630996 kB\nDirectMap2M:    12804096 kB\nDirectMap1G:           0 kB",
+  "load_start": [
+    0.80126953125,
+    0.81787109375,
+    0.81640625
+  ],
+  "cpu_governors": [
+    "powersave"
+  ],
+  "virtualization": "",
+  "cgroup_cpu_max": null,
+  "compiler": "gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0\nCopyright (C) 2023 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.",
+  "compile_command": "gcc -O3 -std=c11 -Wall -Wextra -Wpedantic -fopenmp matmul.c -o matmul",
+  "openmp_environment": {
+    "OMP_WAIT_POLICY": "PASSIVE",
+    "OMP_DYNAMIC": "FALSE",
+    "OMP_PROC_BIND": "FALSE"
+  },
+  "source_sha256": "21e21b9093fee863c15c653bd99f8a40e0e2f02e1b72f8ac955ce8fbbb1ee04f",
+  "benchmark_sha256": "b675f439455c1a798277161ccde3732313c003b83752820838119d768fc87179",
+  "settings": {
+    "profile": "study",
+    "series": 5,
+    "repeats": 5,
+    "warmups": 1,
+    "timeout": 3.0,
+    "large_timeout": 30.0,
+    "max_threads": null
+  },
+  "plan_sha256": "5bc3f983fae9fb15bc62eb56abcfd683e06512dc2ccfc8c02d2093e987813d28",
+  "configurations": 3999,
+  "finished_utc": "2026-11-16T12:34:11.717852+00:00",
+  "load_end": [
+    3.3388671875,
+    3.099609375,
+    2.09716796875
+  ],
+  "completed_configurations": 3999,
+  "successful_samples": 19564,
+  "timeouts": 91
+}
