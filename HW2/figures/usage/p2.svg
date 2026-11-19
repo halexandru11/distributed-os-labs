@@ -1,0 +1,173 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="900" viewBox="0 0 1000 900" role="img">
+<title>P2 parallel_j — cell and product ownership</title>
+<desc>For each row, two workers request two columns at a time; seven columns leave a final chunk of one. Colors and thread labels identify owners; the small strip in each output cell lists k-product owners left to right. Dynamic and guided allocation is illustrative.</desc>
+<rect width="1000" height="900" rx="14" fill="#fff"/>
+<text x="28" y="37" font-family="system-ui, sans-serif" font-size="24" fill="#17243a" font-weight="600" text-anchor="start">P2 · parallel_j</text>
+<text x="28" y="65" font-family="system-ui, sans-serif" font-size="16" fill="#607086" font-weight="400" text-anchor="start">One possible schedule (teaching model)</text>
+<text x="28" y="105" font-family="system-ui, sans-serif" font-size="20" fill="#17243a" font-weight="600" text-anchor="start">C: rows i, columns j</text>
+<text x="28" y="130" font-family="system-ui, sans-serif" font-size="16" fill="#607086" font-weight="400" text-anchor="start">All values = 4. Each colored strip = k0 → k3.</text>
+<text x="117.14285714285714" y="162" font-family="system-ui, sans-serif" font-size="15" fill="#17243a" font-weight="400" text-anchor="middle">j=0</text>
+<text x="169.42857142857142" y="162" font-family="system-ui, sans-serif" font-size="15" fill="#17243a" font-weight="400" text-anchor="middle">j=1</text>
+<text x="221.7142857142857" y="162" font-family="system-ui, sans-serif" font-size="15" fill="#17243a" font-weight="400" text-anchor="middle">j=2</text>
+<text x="274.0" y="162" font-family="system-ui, sans-serif" font-size="15" fill="#17243a" font-weight="400" text-anchor="middle">j=3</text>
+<text x="326.2857142857143" y="162" font-family="system-ui, sans-serif" font-size="15" fill="#17243a" font-weight="400" text-anchor="middle">j=4</text>
+<text x="378.5714285714286" y="162" font-family="system-ui, sans-serif" font-size="15" fill="#17243a" font-weight="400" text-anchor="middle">j=5</text>
+<text x="430.8571428571429" y="162" font-family="system-ui, sans-serif" font-size="15" fill="#17243a" font-weight="400" text-anchor="middle">j=6</text>
+<text x="30" y="201" font-family="system-ui, sans-serif" font-size="15" fill="#17243a" font-weight="400" text-anchor="start">i=0</text>
+<rect x="90.0" y="174" width="44.285714285714285" height="61" rx="7" fill="#dbeafe" stroke="#17243a" stroke-width="2"/>
+<text x="112.14285714285714" y="199" font-family="system-ui, sans-serif" font-size="21" fill="#17243a" font-weight="600" text-anchor="middle">4</text>
+<text x="112.14285714285714" y="217" font-family="system-ui, sans-serif" font-size="16" fill="#17243a" font-weight="400" text-anchor="middle">T0</text>
+<rect x="94.0" y="224" width="8.071428571428571" height="7" rx="1" fill="#2563eb"/>
+<rect x="103.07142857142857" y="224" width="8.071428571428571" height="7" rx="1" fill="#2563eb"/>
+<rect x="112.14285714285714" y="224" width="8.071428571428571" height="7" rx="1" fill="#2563eb"/>
+<rect x="121.21428571428572" y="224" width="8.071428571428571" height="7" rx="1" fill="#2563eb"/>
+<rect x="142.28571428571428" y="174" width="44.285714285714285" height="61" rx="7" fill="#dbeafe"/>
+<text x="164.42857142857142" y="199" font-family="system-ui, sans-serif" font-size="21" fill="#17243a" font-weight="600" text-anchor="middle">4</text>
+<text x="164.42857142857142" y="217" font-family="system-ui, sans-serif" font-size="16" fill="#17243a" font-weight="400" text-anchor="middle">T0</text>
+<rect x="146.28571428571428" y="224" width="8.071428571428571" height="7" rx="1" fill="#2563eb"/>
+<rect x="155.35714285714286" y="224" width="8.071428571428571" height="7" rx="1" fill="#2563eb"/>
+<rect x="164.42857142857142" y="224" width="8.071428571428571" height="7" rx="1" fill="#2563eb"/>
+<rect x="173.5" y="224" width="8.071428571428571" height="7" rx="1" fill="#2563eb"/>
+<rect x="194.57142857142856" y="174" width="44.285714285714285" height="61" rx="7" fill="#ffedd5"/>
+<text x="216.7142857142857" y="199" font-family="system-ui, sans-serif" font-size="21" fill="#17243a" font-weight="600" text-anchor="middle">4</text>
+<text x="216.7142857142857" y="217" font-family="system-ui, sans-serif" font-size="16" fill="#17243a" font-weight="400" text-anchor="middle">T1</text>
+<rect x="198.57142857142856" y="224" width="8.071428571428571" height="7" rx="1" fill="#c2410c"/>
+<rect x="207.64285714285714" y="224" width="8.071428571428571" height="7" rx="1" fill="#c2410c"/>
+<rect x="216.7142857142857" y="224" width="8.071428571428571" height="7" rx="1" fill="#c2410c"/>
+<rect x="225.78571428571428" y="224" width="8.071428571428571" height="7" rx="1" fill="#c2410c"/>
+<rect x="246.85714285714286" y="174" width="44.285714285714285" height="61" rx="7" fill="#ffedd5"/>
+<text x="269.0" y="199" font-family="system-ui, sans-serif" font-size="21" fill="#17243a" font-weight="600" text-anchor="middle">4</text>
+<text x="269.0" y="217" font-family="system-ui, sans-serif" font-size="16" fill="#17243a" font-weight="400" text-anchor="middle">T1</text>
+<rect x="250.85714285714286" y="224" width="8.071428571428571" height="7" rx="1" fill="#c2410c"/>
+<rect x="259.92857142857144" y="224" width="8.071428571428571" height="7" rx="1" fill="#c2410c"/>
+<rect x="269.0" y="224" width="8.071428571428571" height="7" rx="1" fill="#c2410c"/>
+<rect x="278.07142857142856" y="224" width="8.071428571428571" height="7" rx="1" fill="#c2410c"/>
+<rect x="299.1428571428571" y="174" width="44.285714285714285" height="61" rx="7" fill="#ffedd5"/>
+<text x="321.2857142857143" y="199" font-family="system-ui, sans-serif" font-size="21" fill="#17243a" font-weight="600" text-anchor="middle">4</text>
+<text x="321.2857142857143" y="217" font-family="system-ui, sans-serif" font-size="16" fill="#17243a" font-weight="400" text-anchor="middle">T1</text>
+<rect x="303.1428571428571" y="224" width="8.071428571428571" height="7" rx="1" fill="#c2410c"/>
+<rect x="312.21428571428567" y="224" width="8.071428571428571" height="7" rx="1" fill="#c2410c"/>
+<rect x="321.2857142857143" y="224" width="8.071428571428571" height="7" rx="1" fill="#c2410c"/>
+<rect x="330.35714285714283" y="224" width="8.071428571428571" height="7" rx="1" fill="#c2410c"/>
+<rect x="351.42857142857144" y="174" width="44.285714285714285" height="61" rx="7" fill="#ffedd5"/>
+<text x="373.5714285714286" y="199" font-family="system-ui, sans-serif" font-size="21" fill="#17243a" font-weight="600" text-anchor="middle">4</text>
+<text x="373.5714285714286" y="217" font-family="system-ui, sans-serif" font-size="16" fill="#17243a" font-weight="400" text-anchor="middle">T1</text>
+<rect x="355.42857142857144" y="224" width="8.071428571428571" height="7" rx="1" fill="#c2410c"/>
+<rect x="364.5" y="224" width="8.071428571428571" height="7" rx="1" fill="#c2410c"/>
+<rect x="373.5714285714286" y="224" width="8.071428571428571" height="7" rx="1" fill="#c2410c"/>
+<rect x="382.64285714285717" y="224" width="8.071428571428571" height="7" rx="1" fill="#c2410c"/>
+<rect x="403.7142857142857" y="174" width="44.285714285714285" height="61" rx="7" fill="#dbeafe"/>
+<text x="425.8571428571429" y="199" font-family="system-ui, sans-serif" font-size="21" fill="#17243a" font-weight="600" text-anchor="middle">4</text>
+<text x="425.8571428571429" y="217" font-family="system-ui, sans-serif" font-size="16" fill="#17243a" font-weight="400" text-anchor="middle">T0</text>
+<rect x="407.7142857142857" y="224" width="8.071428571428571" height="7" rx="1" fill="#2563eb"/>
+<rect x="416.7857142857143" y="224" width="8.071428571428571" height="7" rx="1" fill="#2563eb"/>
+<rect x="425.8571428571429" y="224" width="8.071428571428571" height="7" rx="1" fill="#2563eb"/>
+<rect x="434.92857142857144" y="224" width="8.071428571428571" height="7" rx="1" fill="#2563eb"/>
+<text x="30" y="271" font-family="system-ui, sans-serif" font-size="15" fill="#17243a" font-weight="400" text-anchor="start">i=1</text>
+<rect x="90.0" y="244" width="44.285714285714285" height="61" rx="7" fill="#dbeafe"/>
+<text x="112.14285714285714" y="269" font-family="system-ui, sans-serif" font-size="21" fill="#17243a" font-weight="600" text-anchor="middle">4</text>
+<text x="112.14285714285714" y="287" font-family="system-ui, sans-serif" font-size="16" fill="#17243a" font-weight="400" text-anchor="middle">T0</text>
+<rect x="94.0" y="294" width="8.071428571428571" height="7" rx="1" fill="#2563eb"/>
+<rect x="103.07142857142857" y="294" width="8.071428571428571" height="7" rx="1" fill="#2563eb"/>
+<rect x="112.14285714285714" y="294" width="8.071428571428571" height="7" rx="1" fill="#2563eb"/>
+<rect x="121.21428571428572" y="294" width="8.071428571428571" height="7" rx="1" fill="#2563eb"/>
+<rect x="142.28571428571428" y="244" width="44.285714285714285" height="61" rx="7" fill="#dbeafe"/>
+<text x="164.42857142857142" y="269" font-family="system-ui, sans-serif" font-size="21" fill="#17243a" font-weight="600" text-anchor="middle">4</text>
+<text x="164.42857142857142" y="287" font-family="system-ui, sans-serif" font-size="16" fill="#17243a" font-weight="400" text-anchor="middle">T0</text>
+<rect x="146.28571428571428" y="294" width="8.071428571428571" height="7" rx="1" fill="#2563eb"/>
+<rect x="155.35714285714286" y="294" width="8.071428571428571" height="7" rx="1" fill="#2563eb"/>
+<rect x="164.42857142857142" y="294" width="8.071428571428571" height="7" rx="1" fill="#2563eb"/>
+<rect x="173.5" y="294" width="8.071428571428571" height="7" rx="1" fill="#2563eb"/>
+<rect x="194.57142857142856" y="244" width="44.285714285714285" height="61" rx="7" fill="#ffedd5"/>
+<text x="216.7142857142857" y="269" font-family="system-ui, sans-serif" font-size="21" fill="#17243a" font-weight="600" text-anchor="middle">4</text>
+<text x="216.7142857142857" y="287" font-family="system-ui, sans-serif" font-size="16" fill="#17243a" font-weight="400" text-anchor="middle">T1</text>
+<rect x="198.57142857142856" y="294" width="8.071428571428571" height="7" rx="1" fill="#c2410c"/>
+<rect x="207.64285714285714" y="294" width="8.071428571428571" height="7" rx="1" fill="#c2410c"/>
+<rect x="216.7142857142857" y="294" width="8.071428571428571" height="7" rx="1" fill="#c2410c"/>
+<rect x="225.78571428571428" y="294" width="8.071428571428571" height="7" rx="1" fill="#c2410c"/>
+<rect x="246.85714285714286" y="244" width="44.285714285714285" height="61" rx="7" fill="#ffedd5"/>
+<text x="269.0" y="269" font-family="system-ui, sans-serif" font-size="21" fill="#17243a" font-weight="600" text-anchor="middle">4</text>
+<text x="269.0" y="287" font-family="system-ui, sans-serif" font-size="16" fill="#17243a" font-weight="400" text-anchor="middle">T1</text>
+<rect x="250.85714285714286" y="294" width="8.071428571428571" height="7" rx="1" fill="#c2410c"/>
+<rect x="259.92857142857144" y="294" width="8.071428571428571" height="7" rx="1" fill="#c2410c"/>
+<rect x="269.0" y="294" width="8.071428571428571" height="7" rx="1" fill="#c2410c"/>
+<rect x="278.07142857142856" y="294" width="8.071428571428571" height="7" rx="1" fill="#c2410c"/>
+<rect x="299.1428571428571" y="244" width="44.285714285714285" height="61" rx="7" fill="#dbeafe"/>
+<text x="321.2857142857143" y="269" font-family="system-ui, sans-serif" font-size="21" fill="#17243a" font-weight="600" text-anchor="middle">4</text>
+<text x="321.2857142857143" y="287" font-family="system-ui, sans-serif" font-size="16" fill="#17243a" font-weight="400" text-anchor="middle">T0</text>
+<rect x="303.1428571428571" y="294" width="8.071428571428571" height="7" rx="1" fill="#2563eb"/>
+<rect x="312.21428571428567" y="294" width="8.071428571428571" height="7" rx="1" fill="#2563eb"/>
+<rect x="321.2857142857143" y="294" width="8.071428571428571" height="7" rx="1" fill="#2563eb"/>
+<rect x="330.35714285714283" y="294" width="8.071428571428571" height="7" rx="1" fill="#2563eb"/>
+<rect x="351.42857142857144" y="244" width="44.285714285714285" height="61" rx="7" fill="#dbeafe"/>
+<text x="373.5714285714286" y="269" font-family="system-ui, sans-serif" font-size="21" fill="#17243a" font-weight="600" text-anchor="middle">4</text>
+<text x="373.5714285714286" y="287" font-family="system-ui, sans-serif" font-size="16" fill="#17243a" font-weight="400" text-anchor="middle">T0</text>
+<rect x="355.42857142857144" y="294" width="8.071428571428571" height="7" rx="1" fill="#2563eb"/>
+<rect x="364.5" y="294" width="8.071428571428571" height="7" rx="1" fill="#2563eb"/>
+<rect x="373.5714285714286" y="294" width="8.071428571428571" height="7" rx="1" fill="#2563eb"/>
+<rect x="382.64285714285717" y="294" width="8.071428571428571" height="7" rx="1" fill="#2563eb"/>
+<rect x="403.7142857142857" y="244" width="44.285714285714285" height="61" rx="7" fill="#ffedd5"/>
+<text x="425.8571428571429" y="269" font-family="system-ui, sans-serif" font-size="21" fill="#17243a" font-weight="600" text-anchor="middle">4</text>
+<text x="425.8571428571429" y="287" font-family="system-ui, sans-serif" font-size="16" fill="#17243a" font-weight="400" text-anchor="middle">T1</text>
+<rect x="407.7142857142857" y="294" width="8.071428571428571" height="7" rx="1" fill="#c2410c"/>
+<rect x="416.7857142857143" y="294" width="8.071428571428571" height="7" rx="1" fill="#c2410c"/>
+<rect x="425.8571428571429" y="294" width="8.071428571428571" height="7" rx="1" fill="#c2410c"/>
+<rect x="434.92857142857144" y="294" width="8.071428571428571" height="7" rx="1" fill="#c2410c"/>
+<text x="536" y="105" font-family="system-ui, sans-serif" font-size="20" fill="#17243a" font-weight="600" text-anchor="start">Inside C[0,0]</text>
+<text x="536" y="130" font-family="system-ui, sans-serif" font-size="16" fill="#607086" font-weight="400" text-anchor="start">One tile = one A[0,k] × B[k,0] product</text>
+<rect x="536" y="151" width="202" height="90" rx="7" fill="#dbeafe"/>
+<rect x="536" y="151" width="202" height="5" rx="0" fill="#2563eb"/>
+<text x="548" y="178" font-family="system-ui, sans-serif" font-size="15" fill="#17243a" font-weight="400" text-anchor="start">k=0</text>
+<text x="548" y="203" font-family="system-ui, sans-serif" font-size="16" fill="#17243a" font-weight="400" text-anchor="start">1 × 1 = 1</text>
+<text x="548" y="226" font-family="system-ui, sans-serif" font-size="16" fill="#2563eb" font-weight="600" text-anchor="start">T0</text>
+<rect x="746" y="151" width="202" height="90" rx="7" fill="#dbeafe"/>
+<rect x="746" y="151" width="202" height="5" rx="0" fill="#2563eb"/>
+<text x="758" y="178" font-family="system-ui, sans-serif" font-size="15" fill="#17243a" font-weight="400" text-anchor="start">k=1</text>
+<text x="758" y="203" font-family="system-ui, sans-serif" font-size="16" fill="#17243a" font-weight="400" text-anchor="start">1 × 1 = 1</text>
+<text x="758" y="226" font-family="system-ui, sans-serif" font-size="16" fill="#2563eb" font-weight="600" text-anchor="start">T0</text>
+<rect x="536" y="249" width="202" height="90" rx="7" fill="#dbeafe"/>
+<rect x="536" y="249" width="202" height="5" rx="0" fill="#2563eb"/>
+<text x="548" y="276" font-family="system-ui, sans-serif" font-size="15" fill="#17243a" font-weight="400" text-anchor="start">k=2</text>
+<text x="548" y="301" font-family="system-ui, sans-serif" font-size="16" fill="#17243a" font-weight="400" text-anchor="start">1 × 1 = 1</text>
+<text x="548" y="324" font-family="system-ui, sans-serif" font-size="16" fill="#2563eb" font-weight="600" text-anchor="start">T0</text>
+<rect x="746" y="249" width="202" height="90" rx="7" fill="#dbeafe"/>
+<rect x="746" y="249" width="202" height="5" rx="0" fill="#2563eb"/>
+<text x="758" y="276" font-family="system-ui, sans-serif" font-size="15" fill="#17243a" font-weight="400" text-anchor="start">k=3</text>
+<text x="758" y="301" font-family="system-ui, sans-serif" font-size="16" fill="#17243a" font-weight="400" text-anchor="start">1 × 1 = 1</text>
+<text x="758" y="324" font-family="system-ui, sans-serif" font-size="16" fill="#2563eb" font-weight="600" text-anchor="start">T0</text>
+<text x="536" y="372" font-family="system-ui, sans-serif" font-size="16" fill="#17243a" font-weight="400" text-anchor="start">T0 computes all 4 terms locally</text>
+<text x="536" y="399" font-family="system-ui, sans-serif" font-size="16" fill="#17243a" font-weight="400" text-anchor="start">One final store → C[0,0] = 4</text>
+<defs><marker id="arrow-P2" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6" fill="#9aa9bd"/></marker></defs>
+<text x="28" y="457" font-family="system-ui, sans-serif" font-size="21" fill="#17243a" font-weight="600" text-anchor="start">Dynamic: a worker finishes its chunk, then requests another</text>
+<text x="28" y="486" font-family="system-ui, sans-serif" font-size="17" fill="#526278" font-weight="400" text-anchor="start">For row i=0: seven columns, two workers, dynamic:2</text>
+<rect x="28" y="512" width="220" height="115" rx="7" fill="#dbeafe"/>
+<rect x="28" y="512" width="220" height="5" rx="0" fill="#2563eb"/>
+<text x="40" y="540" font-family="system-ui, sans-serif" font-size="17" fill="#17243a" font-weight="600" text-anchor="start">Request 1</text>
+<text x="40" y="567" font-family="system-ui, sans-serif" font-size="18" fill="#17243a" font-weight="400" text-anchor="start">j=0..1</text>
+<text x="40" y="594" font-family="system-ui, sans-serif" font-size="17" fill="#17243a" font-weight="400" text-anchor="start">2 columns → T0</text>
+<line x1="252" y1="567" x2="265" y2="567" stroke="#9aa9bd" stroke-width="1.5" marker-end="url(#arrow-P2)"/>
+<rect x="268" y="512" width="220" height="115" rx="7" fill="#ffedd5"/>
+<rect x="268" y="512" width="220" height="5" rx="0" fill="#c2410c"/>
+<text x="280" y="540" font-family="system-ui, sans-serif" font-size="17" fill="#17243a" font-weight="600" text-anchor="start">Request 2</text>
+<text x="280" y="567" font-family="system-ui, sans-serif" font-size="18" fill="#17243a" font-weight="400" text-anchor="start">j=2..3</text>
+<text x="280" y="594" font-family="system-ui, sans-serif" font-size="17" fill="#17243a" font-weight="400" text-anchor="start">2 columns → T1</text>
+<line x1="492" y1="567" x2="505" y2="567" stroke="#9aa9bd" stroke-width="1.5" marker-end="url(#arrow-P2)"/>
+<rect x="508" y="512" width="220" height="115" rx="7" fill="#ffedd5"/>
+<rect x="508" y="512" width="220" height="5" rx="0" fill="#c2410c"/>
+<text x="520" y="540" font-family="system-ui, sans-serif" font-size="17" fill="#17243a" font-weight="600" text-anchor="start">Request 3</text>
+<text x="520" y="567" font-family="system-ui, sans-serif" font-size="18" fill="#17243a" font-weight="400" text-anchor="start">j=4..5</text>
+<text x="520" y="594" font-family="system-ui, sans-serif" font-size="17" fill="#17243a" font-weight="400" text-anchor="start">2 columns → T1</text>
+<line x1="732" y1="567" x2="745" y2="567" stroke="#9aa9bd" stroke-width="1.5" marker-end="url(#arrow-P2)"/>
+<rect x="748" y="512" width="220" height="115" rx="7" fill="#dbeafe"/>
+<rect x="748" y="512" width="220" height="5" rx="0" fill="#2563eb"/>
+<text x="760" y="540" font-family="system-ui, sans-serif" font-size="17" fill="#17243a" font-weight="600" text-anchor="start">Request 4</text>
+<text x="760" y="567" font-family="system-ui, sans-serif" font-size="18" fill="#17243a" font-weight="400" text-anchor="start">j=6</text>
+<text x="760" y="594" font-family="system-ui, sans-serif" font-size="17" fill="#17243a" font-weight="400" text-anchor="start">1 column → T0</text>
+<text x="28" y="674" font-family="system-ui, sans-serif" font-size="18" fill="#17243a" font-weight="400" text-anchor="start">Chunk sizes: 2, 2, 2, 1. The last chunk contains the one remaining column.</text>
+<text x="28" y="710" font-family="system-ui, sans-serif" font-size="17" fill="#526278" font-weight="400" text-anchor="start">Worker IDs show one possible request order; workers do not take mandatory turns.</text>
+<text x="28" y="749" font-family="system-ui, sans-serif" font-size="17" fill="#17243a" font-weight="400" text-anchor="start">After the row joins, i=1 starts a new column team and queue.</text>
+<rect x="28" y="837" width="13" height="13" rx="2" fill="#2563eb"/>
+<text x="49" y="850" font-family="system-ui, sans-serif" font-size="16" fill="#17243a" font-weight="400" text-anchor="start">T0</text>
+<rect x="264" y="837" width="13" height="13" rx="2" fill="#c2410c"/>
+<text x="285" y="850" font-family="system-ui, sans-serif" font-size="16" fill="#17243a" font-weight="400" text-anchor="start">T1</text>
+</svg>

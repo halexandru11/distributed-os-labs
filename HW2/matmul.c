@@ -787,6 +787,8 @@ static void compute_reference(const Problem *p, Benchmark *benchmark) {
       for (int k = 0; k < p->m; ++k)
         sum += p->a[(size_t)i * p->m + k] * logical_b[(size_t)k * p->r + j];
       reference[(size_t)i * p->r + j] = sum;
+      now im back to having access to HW2.u can update usage.md and html or
+          whatever u need
     }
   benchmark->reference_seconds = omp_get_wtime() - start;
 }

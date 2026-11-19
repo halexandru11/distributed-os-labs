@@ -1,0 +1,47 @@
+<div id="omp-distribution">
+  <style>
+    #omp-distribution { font-family:var(--font-sans); color:var(--foreground); }
+    #omp-distribution .controls { display:flex; flex-wrap:wrap; gap:12px; margin-bottom:16px; }
+    #omp-distribution button { font:inherit; padding:8px 12px; color:var(--foreground); background:var(--secondary); border:1px solid var(--border); border-radius:var(--radius); }
+    #omp-distribution button[aria-pressed="true"] { background:var(--primary); color:var(--primary-foreground); }
+    #omp-distribution .matrix { display:grid; grid-template-columns:repeat(16,minmax(0,1fr)); gap:3px; margin:12px 0; }
+    #omp-distribution .cell { text-align:center; padding:10px 0; background:var(--secondary); font-family:var(--font-mono); font-size:12px; }
+    #omp-distribution .cell.alternate { background:var(--accent); color:var(--accent-foreground); }
+    #omp-distribution .status { margin-top:12px; }
+    #omp-distribution .caption { color:var(--muted-foreground); margin-bottom:12px; }
+    @media(max-width:440px) { #omp-distribution .matrix {gap:1px;} #omp-distribution .cell {font-size:11px;} }
+  </style>
+  <div class="caption">C: 4 rows × 16 columns · 8 requested threads · static scheduling, no chunk size</div>
+  <div class="controls" aria-label="Multiplication variant">
+    <button type="button" data-mode="rows" aria-pressed="true">parallel_i()</button>
+    <button type="button" data-mode="cells" aria-pressed="false">collapse_ij()</button>
+  </div>
+  <div>Output matrix C · each label identifies the thread computing that cell</div>
+  <div class="matrix" role="img" aria-label="Output cells assigned to threads"></div>
+  <div class="status" aria-live="polite"></div>
+  <script>
+    (() => {
+      const root=document.getElementById('omp-distribution');
+      const grid=root.querySelector('.matrix');
+      const status=root.querySelector('.status');
+      function draw(mode) {
+        grid.replaceChildren();
+        for(let i=0;i<4;i++) for(let j=0;j<16;j++) {
+          const thread=mode==='rows'?i:Math.floor((i*16+j)/8);
+          const cell=document.createElement('div');
+          cell.className='cell'+(thread%2?' alternate':'');
+          cell.textContent='T'+thread;
+          cell.setAttribute('aria-label',`C[${i}][${j}] computed by thread ${thread}`);
+          grid.append(cell);
+        }
+        status.textContent=mode==='rows'
+          ? '4 row iterations: T0–T3 compute 16 cells each. T4–T7 receive no iterations.'
+          : '64 (i, j) iterations: T0–T7 compute 8 cells each.';
+        grid.setAttribute('aria-label',status.textContent);
+        root.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.mode===mode)));
+      }
+      root.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>draw(b.dataset.mode)));
+      draw('rows');
+    })();
+  </script>
+</div>

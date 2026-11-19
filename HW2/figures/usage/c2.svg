@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="900" viewBox="0 0 1000 900" role="img">
+<title>C2 collapse_jk — cell and product ownership</title>
+<desc>For each row, flatten (j,k). Workers use atomic additions to the shared cells. Colors and thread labels identify owners; the small strip in each output cell lists k-product owners left to right. Dynamic and guided allocation is illustrative.</desc>
+<rect width="1000" height="900" rx="14" fill="#fff"/>
+<text x="28" y="37" font-family="system-ui, sans-serif" font-size="24" fill="#17243a" font-weight="600" text-anchor="start">C2 · collapse_jk</text>
+<text x="28" y="65" font-family="system-ui, sans-serif" font-size="16" fill="#607086" font-weight="400" text-anchor="start">One possible schedule (teaching model)</text>
+<text x="28" y="105" font-family="system-ui, sans-serif" font-size="20" fill="#17243a" font-weight="600" text-anchor="start">C: rows i, columns j</text>
+<text x="28" y="130" font-family="system-ui, sans-serif" font-size="16" fill="#607086" font-weight="400" text-anchor="start">All values = 4. Each colored strip = k0 → k3.</text>
+<text x="139.0" y="162" font-family="system-ui, sans-serif" font-size="15" fill="#17243a" font-weight="400" text-anchor="middle">j=0</text>
+<text x="235.0" y="162" font-family="system-ui, sans-serif" font-size="15" fill="#17243a" font-weight="400" text-anchor="middle">j=1</text>
+<text x="30" y="201" font-family="system-ui, sans-serif" font-size="15" fill="#17243a" font-weight="400" text-anchor="start">i=0</text>
+<rect x="90" y="174" width="88" height="61" rx="7" fill="#f1f5f9" stroke="#17243a" stroke-width="2"/>
+<text x="134.0" y="199" font-family="system-ui, sans-serif" font-size="21" fill="#17243a" font-weight="600" text-anchor="middle">4</text>
+<text x="134.0" y="217" font-family="system-ui, sans-serif" font-size="16" fill="#17243a" font-weight="400" text-anchor="middle">2 threads</text>
+<rect x="94.0" y="224" width="19.0" height="7" rx="1" fill="#2563eb"/>
+<rect x="114.0" y="224" width="19.0" height="7" rx="1" fill="#2563eb"/>
+<rect x="134.0" y="224" width="19.0" height="7" rx="1" fill="#c2410c"/>
+<rect x="154.0" y="224" width="19.0" height="7" rx="1" fill="#c2410c"/>
+<rect x="186" y="174" width="88" height="61" rx="7" fill="#f1f5f9"/>
+<text x="230.0" y="199" font-family="system-ui, sans-serif" font-size="21" fill="#17243a" font-weight="600" text-anchor="middle">4</text>
+<text x="230.0" y="217" font-family="system-ui, sans-serif" font-size="16" fill="#17243a" font-weight="400" text-anchor="middle">2 threads</text>
+<rect x="190.0" y="224" width="19.0" height="7" rx="1" fill="#c2410c"/>
+<rect x="210.0" y="224" width="19.0" height="7" rx="1" fill="#c2410c"/>
+<rect x="230.0" y="224" width="19.0" height="7" rx="1" fill="#2563eb"/>
+<rect x="250.0" y="224" width="19.0" height="7" rx="1" fill="#2563eb"/>
+<text x="536" y="105" font-family="system-ui, sans-serif" font-size="20" fill="#17243a" font-weight="600" text-anchor="start">Inside C[0,0]</text>
+<text x="536" y="130" font-family="system-ui, sans-serif" font-size="16" fill="#607086" font-weight="400" text-anchor="start">One tile = one A[0,k] × B[k,0] product</text>
+<rect x="536" y="151" width="202" height="90" rx="7" fill="#dbeafe"/>
+<rect x="536" y="151" width="202" height="5" rx="0" fill="#2563eb"/>
+<text x="548" y="178" font-family="system-ui, sans-serif" font-size="15" fill="#17243a" font-weight="400" text-anchor="start">k=0</text>
+<text x="548" y="203" font-family="system-ui, sans-serif" font-size="16" fill="#17243a" font-weight="400" text-anchor="start">1 × 1 = 1</text>
+<text x="548" y="226" font-family="system-ui, sans-serif" font-size="16" fill="#2563eb" font-weight="600" text-anchor="start">T0</text>
+<rect x="746" y="151" width="202" height="90" rx="7" fill="#dbeafe"/>
+<rect x="746" y="151" width="202" height="5" rx="0" fill="#2563eb"/>
+<text x="758" y="178" font-family="system-ui, sans-serif" font-size="15" fill="#17243a" font-weight="400" text-anchor="start">k=1</text>
+<text x="758" y="203" font-family="system-ui, sans-serif" font-size="16" fill="#17243a" font-weight="400" text-anchor="start">1 × 1 = 1</text>
+<text x="758" y="226" font-family="system-ui, sans-serif" font-size="16" fill="#2563eb" font-weight="600" text-anchor="start">T0</text>
+<rect x="536" y="249" width="202" height="90" rx="7" fill="#ffedd5"/>
+<rect x="536" y="249" width="202" height="5" rx="0" fill="#c2410c"/>
+<text x="548" y="276" font-family="system-ui, sans-serif" font-size="15" fill="#17243a" font-weight="400" text-anchor="start">k=2</text>
+<text x="548" y="301" font-family="system-ui, sans-serif" font-size="16" fill="#17243a" font-weight="400" text-anchor="start">1 × 1 = 1</text>
+<text x="548" y="324" font-family="system-ui, sans-serif" font-size="16" fill="#c2410c" font-weight="600" text-anchor="start">T1</text>
+<rect x="746" y="249" width="202" height="90" rx="7" fill="#ffedd5"/>
+<rect x="746" y="249" width="202" height="5" rx="0" fill="#c2410c"/>
+<text x="758" y="276" font-family="system-ui, sans-serif" font-size="15" fill="#17243a" font-weight="400" text-anchor="start">k=3</text>
+<text x="758" y="301" font-family="system-ui, sans-serif" font-size="16" fill="#17243a" font-weight="400" text-anchor="start">1 × 1 = 1</text>
+<text x="758" y="324" font-family="system-ui, sans-serif" font-size="16" fill="#c2410c" font-weight="600" text-anchor="start">T1</text>
+<text x="536" y="372" font-family="system-ui, sans-serif" font-size="16" fill="#17243a" font-weight="400" text-anchor="start">Each tile adds 1 with atomic update</text>
+<text x="536" y="399" font-family="system-ui, sans-serif" font-size="16" fill="#17243a" font-weight="400" text-anchor="start">4 protected additions → C[0,0] = 4</text>
+<defs><marker id="arrow-C2" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6" fill="#9aa9bd"/></marker></defs>
+<text x="28" y="457" font-family="system-ui, sans-serif" font-size="21" fill="#17243a" font-weight="600" text-anchor="start">Flatten the indices into one shared queue</text>
+<text x="28" y="488" font-family="system-ui, sans-serif" font-size="20" fill="#17243a" font-weight="400" text-anchor="start">q = j × 4 + k, with i=0 fixed</text>
+<text x="28" y="518" font-family="system-ui, sans-serif" font-size="17" fill="#526278" font-weight="400" text-anchor="start">Each q is one product; add it to C[0,j] atomically.</text>
+<rect x="28.0" y="542" width="113.0" height="71" rx="7" fill="#dbeafe"/>
+<rect x="28.0" y="542" width="113.0" height="4" rx="0" fill="#2563eb"/>
+<text x="84.5" y="566" font-family="system-ui, sans-serif" font-size="16" fill="#17243a" font-weight="400" text-anchor="middle">q=0</text>
+<text x="84.5" y="587" font-family="system-ui, sans-serif" font-size="17" fill="#17243a" font-weight="400" text-anchor="middle">(0,0)</text>
+<text x="84.5" y="606" font-family="system-ui, sans-serif" font-size="16" fill="#2563eb" font-weight="600" text-anchor="middle">T0</text>
+<rect x="146.0" y="542" width="113.0" height="71" rx="7" fill="#dbeafe"/>
+<rect x="146.0" y="542" width="113.0" height="4" rx="0" fill="#2563eb"/>
+<text x="202.5" y="566" font-family="system-ui, sans-serif" font-size="16" fill="#17243a" font-weight="400" text-anchor="middle">q=1</text>
+<text x="202.5" y="587" font-family="system-ui, sans-serif" font-size="17" fill="#17243a" font-weight="400" text-anchor="middle">(0,1)</text>
+<text x="202.5" y="606" font-family="system-ui, sans-serif" font-size="16" fill="#2563eb" font-weight="600" text-anchor="middle">T0</text>
+<rect x="264.0" y="542" width="113.0" height="71" rx="7" fill="#ffedd5"/>
+<rect x="264.0" y="542" width="113.0" height="4" rx="0" fill="#c2410c"/>
+<text x="320.5" y="566" font-family="system-ui, sans-serif" font-size="16" fill="#17243a" font-weight="400" text-anchor="middle">q=2</text>
+<text x="320.5" y="587" font-family="system-ui, sans-serif" font-size="17" fill="#17243a" font-weight="400" text-anchor="middle">(0,2)</text>
+<text x="320.5" y="606" font-family="system-ui, sans-serif" font-size="16" fill="#c2410c" font-weight="600" text-anchor="middle">T1</text>
+<rect x="382.0" y="542" width="113.0" height="71" rx="7" fill="#ffedd5"/>
+<rect x="382.0" y="542" width="113.0" height="4" rx="0" fill="#c2410c"/>
+<text x="438.5" y="566" font-family="system-ui, sans-serif" font-size="16" fill="#17243a" font-weight="400" text-anchor="middle">q=3</text>
+<text x="438.5" y="587" font-family="system-ui, sans-serif" font-size="17" fill="#17243a" font-weight="400" text-anchor="middle">(0,3)</text>
+<text x="438.5" y="606" font-family="system-ui, sans-serif" font-size="16" fill="#c2410c" font-weight="600" text-anchor="middle">T1</text>
+<rect x="500.0" y="542" width="113.0" height="71" rx="7" fill="#ffedd5"/>
+<rect x="500.0" y="542" width="113.0" height="4" rx="0" fill="#c2410c"/>
+<text x="556.5" y="566" font-family="system-ui, sans-serif" font-size="16" fill="#17243a" font-weight="400" text-anchor="middle">q=4</text>
+<text x="556.5" y="587" font-family="system-ui, sans-serif" font-size="17" fill="#17243a" font-weight="400" text-anchor="middle">(1,0)</text>
+<text x="556.5" y="606" font-family="system-ui, sans-serif" font-size="16" fill="#c2410c" font-weight="600" text-anchor="middle">T1</text>
+<rect x="618.0" y="542" width="113.0" height="71" rx="7" fill="#ffedd5"/>
+<rect x="618.0" y="542" width="113.0" height="4" rx="0" fill="#c2410c"/>
+<text x="674.5" y="566" font-family="system-ui, sans-serif" font-size="16" fill="#17243a" font-weight="400" text-anchor="middle">q=5</text>
+<text x="674.5" y="587" font-family="system-ui, sans-serif" font-size="17" fill="#17243a" font-weight="400" text-anchor="middle">(1,1)</text>
+<text x="674.5" y="606" font-family="system-ui, sans-serif" font-size="16" fill="#c2410c" font-weight="600" text-anchor="middle">T1</text>
+<rect x="736.0" y="542" width="113.0" height="71" rx="7" fill="#dbeafe"/>
+<rect x="736.0" y="542" width="113.0" height="4" rx="0" fill="#2563eb"/>
+<text x="792.5" y="566" font-family="system-ui, sans-serif" font-size="16" fill="#17243a" font-weight="400" text-anchor="middle">q=6</text>
+<text x="792.5" y="587" font-family="system-ui, sans-serif" font-size="17" fill="#17243a" font-weight="400" text-anchor="middle">(1,2)</text>
+<text x="792.5" y="606" font-family="system-ui, sans-serif" font-size="16" fill="#2563eb" font-weight="600" text-anchor="middle">T0</text>
+<rect x="854.0" y="542" width="113.0" height="71" rx="7" fill="#dbeafe"/>
+<rect x="854.0" y="542" width="113.0" height="4" rx="0" fill="#2563eb"/>
+<text x="910.5" y="566" font-family="system-ui, sans-serif" font-size="16" fill="#17243a" font-weight="400" text-anchor="middle">q=7</text>
+<text x="910.5" y="587" font-family="system-ui, sans-serif" font-size="17" fill="#17243a" font-weight="400" text-anchor="middle">(1,3)</text>
+<text x="910.5" y="606" font-family="system-ui, sans-serif" font-size="16" fill="#2563eb" font-weight="600" text-anchor="middle">T0</text>
+<text x="28" y="670" font-family="system-ui, sans-serif" font-size="18" fill="#17243a" font-weight="400" text-anchor="start">q=0..3 contribute to C[0,0]; q=4..7 contribute to C[0,1].</text>
+<text x="28" y="707" font-family="system-ui, sans-serif" font-size="17" fill="#17243a" font-weight="400" text-anchor="start">Both workers contribute to each cell. Each product performs one atomic += 1.</text>
+<text x="28" y="746" font-family="system-ui, sans-serif" font-size="17" fill="#526278" font-weight="400" text-anchor="start">Rows remain sequential; this example has one row so the inner split is visible.</text>
+<rect x="28" y="837" width="13" height="13" rx="2" fill="#2563eb"/>
+<text x="49" y="850" font-family="system-ui, sans-serif" font-size="16" fill="#17243a" font-weight="400" text-anchor="start">T0</text>
+<rect x="264" y="837" width="13" height="13" rx="2" fill="#c2410c"/>
+<text x="285" y="850" font-family="system-ui, sans-serif" font-size="16" fill="#17243a" font-weight="400" text-anchor="start">T1</text>
+</svg>

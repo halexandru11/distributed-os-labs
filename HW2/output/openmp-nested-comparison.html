@@ -1,0 +1,56 @@
+<div id="omp-nested-comparison">
+  <style>
+    #omp-nested-comparison { font-family:var(--font-sans); color:var(--foreground); }
+    #omp-nested-comparison .controls { display:flex; flex-wrap:wrap; gap:12px; margin-bottom:16px; }
+    #omp-nested-comparison button { font:inherit; padding:8px 12px; color:var(--foreground); background:var(--secondary); border:1px solid var(--border); border-radius:var(--radius); }
+    #omp-nested-comparison button[aria-pressed="true"] { background:var(--primary); color:var(--primary-foreground); }
+    #omp-nested-comparison .matrix { display:grid; grid-template-columns:repeat(16,minmax(0,1fr)); gap:3px; margin:12px 0; }
+    #omp-nested-comparison .cell { text-align:center; padding:10px 0; background:var(--secondary); font-family:var(--font-mono); font-size:12px; }
+    #omp-nested-comparison .cell.alternate { background:var(--accent); color:var(--accent-foreground); }
+    #omp-nested-comparison .team-0 { background:color-mix(in srgb,var(--chart-1,var(--viz-series-1)) 34%,var(--background)); color:var(--foreground); }
+    #omp-nested-comparison .team-1 { background:color-mix(in srgb,var(--chart-2,var(--viz-series-2)) 34%,var(--background)); color:var(--foreground); }
+    #omp-nested-comparison .team-2 { background:color-mix(in srgb,var(--chart-3,var(--viz-series-3)) 34%,var(--background)); color:var(--foreground); }
+    #omp-nested-comparison .team-3 { background:color-mix(in srgb,var(--chart-4,var(--viz-series-4)) 34%,var(--background)); color:var(--foreground); }
+    #omp-nested-comparison .status { margin-top:12px; }
+    #omp-nested-comparison .caption { color:var(--muted-foreground); margin-bottom:12px; }
+    @media(max-width:440px) { #omp-nested-comparison .matrix {gap:1px;} #omp-nested-comparison .cell {font-size:10px;letter-spacing:-0.4px;} }
+  </style>
+  <div class="caption">C: 4 rows × 16 columns · Thread budget: 8 · static scheduling, no chunk size</div>
+  <div class="controls" aria-label="Multiplication variant">
+    <button type="button" data-mode="rows" aria-pressed="true">parallel_i()</button>
+    <button type="button" data-mode="cells" aria-pressed="false">collapse_ij()</button>
+    <button type="button" data-mode="nested" aria-pressed="false">nested_ij()</button>
+  </div>
+  <div>Output matrix C · each label identifies the thread computing that cell</div>
+  <div class="matrix" role="img" aria-label="Output cells assigned to threads"></div>
+  <div class="status" aria-live="polite"></div>
+  <script>
+    (() => {
+      const root=document.getElementById('omp-nested-comparison');
+      const grid=root.querySelector('.matrix');
+      const status=root.querySelector('.status');
+      function draw(mode) {
+        grid.replaceChildren();
+        for(let i=0;i<4;i++) for(let j=0;j<16;j++) {
+          const half = Math.floor(j / 8);
+          const thread = {rows: i, cells: i * 2 + half, nested: half}[mode];
+          const team = mode === 'nested' ? i : 0;
+          const cell=document.createElement('div');
+          cell.className = mode === 'nested' ? 'cell team-' + team : 'cell' + (thread % 2 ? ' alternate' : '');
+          cell.textContent = mode === 'nested' ? `T${team}${thread}` : 'T' + thread;
+          cell.setAttribute('aria-label',`C[${i}][${j}] computed by thread ${thread} in team ${team}`);
+          grid.append(cell);
+        }
+        status.textContent = {
+          rows: 'One team of 8. T0–T3 compute one row each. T4–T7 receive no rows.',
+          cells: 'One team of 8. Each thread computes 8 cells.',
+          nested: 'Each color marks one inner team. In T21, 2 identifies the outer thread that starts the team and 1 is the thread ID within that team.'
+        }[mode];
+        grid.setAttribute('aria-label',status.textContent);
+        root.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.mode===mode)));
+      }
+      root.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>draw(b.dataset.mode)));
+      draw('nested');
+    })();
+  </script>
+</div>

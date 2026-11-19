@@ -1,62 +1,56 @@
 # HW2 — Înmulțirea matricilor cu OpenMP
 
-Rezolvarea [temei 2](https://edu.info.uaic.ro/sisteme-de-operare-distribuite/SOD/labs/homeworks/tema2.html): referință secvențială, cele **10 variante cerute**, cele **2 variante bonus**, verificarea rezultatelor și studiul experimental pe **Victus și HP-Laptop**. Spre deosebire de HW1, fiecare proces OpenMP folosește memoria partajată a unui singur calculator; experimentele se repetă separat pe fiecare platformă.
+Rezolvarea [temei 2](https://edu.info.uaic.ro/sisteme-de-operare-distribuite/SOD/labs/homeworks/tema2.html) include referința secvențială, **10 variante cerute**, **2 variante bonus** și un studiu experimental pe **Victus și HP-Laptop**. Fiecare rulare OpenMP folosește memoria partajată a unui singur calculator.
 
-- [EXPERIMENTS.md](EXPERIMENTS.md): metodologia, acoperirea cerințelor și reproducerea studiului.
-- [Raportul cu rezultate și concluzii](results/study/report.md): date măsurate, tabele și grafice.
-- [Prezentare HTML autonomă](results/study/dashboard.html): comparația platformelor și scalarea.
-- [Date agregate CSV](results/study/summary.csv): medii, deviații, speedup și eficiență.
-- [Grafice PNG/SVG](figures/study/): fișiere pentru prezentare/export.
+- [Exemple de rulare](USAGE.md) și [vizualizare interactivă](USAGE.html).
+- [Metodologia și reproducerea studiului](EXPERIMENTS.md).
+- [Raport](results/study/report.md), [prezentare HTML](results/study/dashboard.html), [date CSV](results/study/summary.csv) și [grafice PNG/SVG](figures/study/).
 
-## Compilare și prima rulare
+## Compilare și rulare
 
-Necesită GCC cu OpenMP și Python 3.10+. Colectarea benchmark-urilor folosește numai biblioteca standard Python; graficele necesită Matplotlib și NumPy.
+Necesită GCC cu OpenMP. Scripturile folosesc Python 3.10+, iar graficele necesită Matplotlib și NumPy.
 
 ```bash
 cd HW2
 make
 ./matmul --n 100 --m 200 --r 150 --variant parallel_i --budget 4
-```
-
-Programul generează A[n,m] și B[m,r], calculează C[n,r] și compară **toate elementele** cu o referință secvențială. Implicit execută o încălzire și cinci repetări; emite câte un obiect JSON pe linie, numai după verificarea rezultatului. O eroare de corectitudine produce cod de ieșire nenul.
-
-```bash
 ./matmul --list
 ./matmul --help
+```
+
+Programul generează A[n,m] și B[m,r], apoi verifică fiecare element din C[n,r] față de referința secvențială. Implicit face o încălzire și cinci repetări măsurate. Scrie câte un obiect JSON pe linie pentru fiecare repetare verificată și returnează un cod nenul la o eroare de corectitudine.
+
+`--seed` reproduce intrările pe ambele platforme și în ambele layout-uri. Pentru matrici mici, `--dump` include A, B logică și C în ordinea pe linii, cu o limită de 4096 elemente per matrice.
+
+```bash
 ./matmul --n 3 --m 7 --r 5 --variant collapse_ijk --budget 4 --repeats 1 --dump
 ```
 
-`--dump` include A, B logică și C ca vectori pe linii și este limitat la 4096 elemente/matrice. Nu există dependență de fișiere externe de intrare; `--seed` permite regenerarea exactă a matricilor.
-
-## Variante și evitarea curselor de date
-
-Indicii rămân în ordinea i, j, k, cu k peste dimensiunea comună m. O funcție `dot()` conține bucla secvențială k în variantele care atribuie o celulă unui singur fir.
+## Variante OpenMP
 
 | Variantă CLI | Bucle paralele | Echipe cerute | Protecția rezultatului |
 | --- | --- | --- | --- |
 | `seq` | niciuna | 1 fir | referință secvențială |
-| `parallel_i` | i | Ti | fiecare fir deține linii distincte |
+| `parallel_i` | i | Ti | linii distincte |
 | `parallel_j` | j, pentru fiecare i | Tj | celule distincte |
 | `parallel_k` | k, pentru fiecare (i,j) | Tk | `reduction(+:sum)` |
 | `collapse_ij` | i și j, `collapse(2)` | Ti | celule distincte |
-| `collapse_jk` | j și k, `collapse(2)`, pentru fiecare i | Tj | `atomic update` pe C[i,j] |
-| `collapse_ijk` | i, j și k, `collapse(3)` | Ti | `atomic update` pe C[i,j] |
+| `collapse_jk` | j și k, `collapse(2)`, pentru fiecare i | Tj | `atomic update` |
+| `collapse_ijk` | i, j și k, `collapse(3)` | Ti | `atomic update` |
 | `nested_ij` | i, apoi echipe j | Ti × Tj | celule distincte |
-| `nested_jk` | j, apoi echipe k | Tj × Tk | reducere k pentru fiecare celulă |
-| `nested_ik` | i, apoi echipe k; j secvențial | Ti × Tk | reducere k pentru fiecare celulă |
-| `nested_ijk` | i, apoi j, apoi k | Ti × Tj × Tk | reducere k pentru fiecare celulă |
-| `hybrid_ij_k` (bonus) | `collapse(ij)`, apoi nested k | Ti × Tk | reducere k |
-| `hybrid_i_jk` (bonus) | i, apoi nested `collapse(jk)` | Ti × Tj | `atomic update` |
+| `nested_jk` | j, apoi echipe k | Tj × Tk | reducere pe k |
+| `nested_ik` | i, apoi echipe k, cu j secvențial | Ti × Tk | reducere pe k |
+| `nested_ijk` | i, apoi j, apoi k | Ti × Tj × Tk | reducere pe k |
+| `hybrid_ij_k` (bonus) | `collapse(ij)`, apoi echipe k | Ti × Tk | reducere pe k |
+| `hybrid_i_jk` (bonus) | i, apoi echipe `collapse(jk)` | Ti × Tj | `atomic update` |
 
-Un `collapse` produce o singură echipă pentru spațiul aplatizat. Când acesta include k, contribuțiile către aceeași celulă trebuie sincronizate. `atomic` previne pierderea actualizărilor; nu elimină costul contendenței. Pentru k paralel separat, reducerea folosește sume private și scrie celula după bariera implicită. Indicii declarați în bucle sunt privați; matricile sunt partajate; A și B rămân nemodificate.
+Un `collapse` folosește o singură echipă. Când k este paralel, mai multe fire contribuie la aceeași celulă, prin sume private combinate la reducere sau prin actualizări atomice. `--list` afișează și variantele cu sufixele `_atomic` și `_reduction`.
 
-Nested parallelism este activat prin `omp_set_max_active_levels(3)`. Nu se folosește API-ul depreciat `omp_set_nested`. Echipele cerute sunt verificate printr-o probă separată, în afara intervalului măsurat; `team_min`, `team_max` și `thread_limit` expun eventuala serializare impusă de runtime. Proba nu este o măsurătoare a utilizării CPU și nici o garanție de simultaneitate la fiecare instrucțiune.
+## Fire și scheduling
 
-## Thread-uri și schedule pentru fiecare nivel
-
-`--budget GP` împarte bugetul total între nivelurile variantei. Exemplu: GP=8 produce (2,2,2) la `nested_ijk` și (4,2) la o variantă cu două niveluri. La un singur nivel cere o echipă de 8 fire. Pentru GP prim, factorii interiori sunt 1: această limitare a factorizării este intenționată și este vizibilă în date.
-
-`--threads I,J,K` configurează explicit dimensiunea echipei fiecărei bucle și este incompatibil cu `--budget`. Firele nivelurilor secvențiale nu intră în GP; pentru collapse se folosește dimensiunea primei bucle din grup. Astfel, exemplul următor cere GP=8:
+- `--budget GP` factorizează bugetul între echipele imbricate. GP=8 dă (2,2,2) pentru trei niveluri și (4,2) pentru două. Pentru GP prim, echipele interioare au câte un fir.
+- `--threads I,J,K` setează explicit echipele și este incompatibil cu `--budget`. Buclele secvențiale sunt ignorate, iar un grup `collapse` preia numărul de fire și politica primei bucle.
+- `--schedule` setează politica globală, cu suprascrieri prin `--schedule-i`, `--schedule-j` și `--schedule-k`. Politicile `static`, `dynamic` și `guided` acceptă un chunk pozitiv opțional. Fără chunk, `static` folosește împărțirea implicită, iar `dynamic` și `guided` folosesc 1.
 
 ```bash
 OMP_WAIT_POLICY=PASSIVE ./matmul --n 30 --m 200 --r 40 \
@@ -64,60 +58,36 @@ OMP_WAIT_POLICY=PASSIVE ./matmul --n 30 --m 200 --r 40 \
   --schedule-i static --schedule-j dynamic:4 --schedule-k guided:8
 ```
 
-`--schedule` stabilește politica pentru toate buclele, iar `--schedule-i`, `--schedule-j`, `--schedule-k` o suprascriu independent. Sunt acceptate `static`, `dynamic`, `guided` și un chunk pozitiv opțional, de exemplu `static:8`. `static` fără chunk folosește împărțirea implicită a runtime-ului; dynamic/guided fără chunk folosesc 1. Într-un collapse se aplică schedule-ul primei bucle din grup. Fiecare task setează `omp_set_schedule` înainte de a crea echipa următoare, iar buclele folosesc `schedule(runtime)`.
+Programul permite trei niveluri active. Câmpurile `team_min` și `team_max` provin dintr-o probă de echipe efectuată în afara măsurării și arată când runtime-ul formează echipe mai mici decât cele cerute.
 
-```bash
-./matmul --n 100 --m 100 --r 100 --variant nested_ij --threads 2,4,1
-./matmul --n 100 --m 100 --r 100 --variant collapse_ij --budget 4 --schedule dynamic:8
-```
+## Intrări și măsurare
 
-## Tip numeric, intrări și layout
+Matricile folosesc `uint64_t`, cu aritmetică modulo 2⁶⁴. Opțiunea `--dataset` acceptă `random` (valori între 0 și 100), `zeros`, `ones`, `max` (UINT64_MAX) și `random_full` (valori aleatoare pe 64 de biți). Cazurile „best” și „worst” din enunț corespund intrărilor `zeros` și `max`. Nucleul execută aceleași operații pentru toate seturile.
 
-Toate matricile folosesc `uint64_t`. Adunările și înmulțirile au semantica definită de C **modulo 2⁶⁴**. Alegerea evită overflow-ul semnat nedefinit în experimentul cu valori maxime; nu oferă precizie arbitrară. Pentru intrările aleatoare mici, rezultatele încap în 64 de biți și coincid cu produsul matematic obișnuit.
+`--layout row` stochează B pe linii. `--layout transposed` stochează B pe coloane, astfel încât ambii operanzi ai produsului scalar sunt citiți consecutiv.
 
-| `--dataset` | Valori A și B | Rezultat |
-| --- | --- | --- |
-| `random` | pseudoaleator în [0,100], SplitMix64 | exact pentru dimensiunile studiate |
-| `zeros` | numai 0; cazul „best” din enunț | toate celulele 0 |
-| `ones` | numai 1; alternativă pentru „best” | toate celulele m |
-| `max` | numai UINT64_MAX; cazul „worst” pentru tipul ales | toate celulele m modulo 2⁶⁴ |
-| `random_full` | pseudoaleator pe 64 de biți | produs modulo 2⁶⁴; folosit și la teste |
-
-Aceleași seed-uri produc exact aceleași intrări pe ambele calculatoare și în ambele layout-uri. Seed-uri distincte dau perechi distincte. Programul nu sare peste operații pentru zero sau unu; „best” și „worst” desemnează valorile, fără să impună ordinea timpilor.
-
-`--layout row` stochează B pe linii. `--layout transposed` stochează B[k,j] la poziția j*m+k, astfel încât ambii operanzi ai produsului scalar sunt citiți consecutiv. Aranjarea memoriei este realizată înaintea măsurării; comparăm costul nucleului, nu timpul total incluzând o transpunere separată. Referința de verificare folosește întotdeauna B logică pe linii.
-
-## Ce conține timpul raportat
-
-`seconds` măsoară exclusiv apelul variantei de înmulțire, cu `omp_get_wtime()`. Include operațiile aritmetice, accesul la matrici, crearea echipelor, scheduling-ul, reducerile, atomicele și barierele. Exclude generarea intrărilor, alocarea, aranjarea lui B, resetarea lui C, proba de thread-uri, calculul referinței și verificarea rezultatului.
-
-`reference_seconds` este timpul referinței independente folosite la verificare. Studiul calculează speedup folosind **rulări `seq` separate, cu aceleași repetări și încălzire**, pentru fiecare campanie, formă, intrare și layout. Numărul de page faults din apelul nucleului este în `minor_faults`/`major_faults`.
+`seconds` măsoară apelul de înmulțire cu `omp_get_wtime()`, inclusiv costurile OpenMP. Pregătirea matricilor și verificarea au loc în afara intervalului. Câmpurile `minor_faults` și `major_faults` numără page faults în timpul apelului. `reference_seconds` măsoară referința de verificare, iar speedup-ul studiului folosește rulări `seq` separate, în aceleași condiții experimentale.
 
 ## Benchmark-uri, raport și teste
 
-Din `HW2`:
-
 ```bash
-# Studiul complet al factorilor, pe cele două calculatoare, consecutiv:
+# Colectarea studiului pe ambele calculatoare
 python3 benchmark.py --hosts local HP-Laptop --collect-only
 
-# Regenerarea raportului și a graficelor din datele existente:
+# Regenerarea raportului din datele existente
 python3 analyze.py --input results/study
-# Dacă Matplotlib/NumPy lipsesc:
+# Dacă Matplotlib și NumPy lipsesc
 uv run --with matplotlib --with numpy python analyze.py --input results/study
 
-# Verificare rapidă a colectării, fără a modifica datele studiului:
+# Probă de colectare într-un director separat
 python3 benchmark.py --profile smoke --collect-only --output /tmp/hw2-smoke
 
-# Corectitudine C, planificare experimente, agregare și timeout-uri:
+# Teste și verificare cu UndefinedBehaviorSanitizer
 make test
-# Repetarea testelor C cu UndefinedBehaviorSanitizer:
 make debug
 MATMUL_EXE="$PWD/matmul_debug" python3 -m unittest discover -s tests -p test_matmul.py -v
 ```
 
-`--hosts` colectează pe fiecare calculator separat și consecutiv. Pentru un host SSH, scriptul folosește autentificarea existentă, copiază sursele într-un director temporar, compilează local, rulează benchmark-ul acolo și aduce datele înapoi. Nu necesită NFS sau instalarea Matplotlib pe mașina remote. Dacă apare o eroare, afișează directorul remote păstrat pentru recuperare.
-
-Rezultatele se reiau automat din jurnalul local numai când sursele, planul, setările și mediul OpenMP coincid. Pentru o campanie nouă sau o sursă modificată, folosește alt `--output`. Instrucțiuni pentru grile personalizate, timeout-uri și limitele interpretării sunt în [EXPERIMENTS.md](EXPERIMENTS.md).
+`--hosts` rulează pe fiecare calculator separat. Pentru o gazdă SSH, scriptul folosește autentificarea existentă, compilează într-un director temporar pe gazdă și copiază datele înapoi. Colectarea se reia din jurnal când sursele, planul, setările și mediul OpenMP coincid. Pentru o campanie nouă, folosește alt `--output`. Detaliile sunt în [EXPERIMENTS.md](EXPERIMENTS.md).
 
 [Toate temele](../README.md)
